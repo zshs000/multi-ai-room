@@ -210,6 +210,7 @@ function providerName(id) {
             <div class="toolbar">
               <button @click="showLineups = true">⚡ 载入阵容模板</button>
             </div>
+            <p class="hint" style="margin-bottom:10px">提示：修改角色只影响新讨论；已有会话保留创建时的角色快照。</p>
             <div v-for="(a, idx) in agents" :key="a.id" class="card" :style="{ borderLeftColor: a.color }">
               <div class="order-btns">
                 <button class="mini" :disabled="idx === 0" @click="moveAgent(idx, -1)">▲</button>

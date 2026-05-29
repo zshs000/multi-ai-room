@@ -161,6 +161,15 @@ async function delSession(id, e) {
   if (currentSessionId.value === id) newChat()
   await loadSessions()
 }
+async function renameSessionPrompt(s, e) {
+  e.stopPropagation()
+  const title = prompt('重命名会话', s.title)
+  if (title === null) return
+  const t = title.trim()
+  if (!t) return
+  await api.renameSession(s.id, t)
+  await loadSessions()
+}
 
 // ---------- 导出 Markdown ----------
 function exportMarkdown() {
@@ -212,7 +221,10 @@ async function onSettingsClose() {
         >
           <div class="session-title">{{ s.title }}</div>
           <div class="session-meta">{{ s.messageCount }} 条 · {{ s.agentNames.join('/') }}</div>
-          <button class="session-del" @click="delSession(s.id, $event)" title="删除">✕</button>
+          <div class="session-btns">
+            <button class="session-btn" @click="renameSessionPrompt(s, $event)" title="重命名">✎</button>
+            <button class="session-btn" @click="delSession(s.id, $event)" title="删除">✕</button>
+          </div>
         </div>
         <div v-if="!sessions.length" class="session-empty">还没有历史会话</div>
       </div>
@@ -298,11 +310,12 @@ async function onSettingsClose() {
 .session-item { position: relative; padding: 10px 12px; border-radius: 8px; cursor: pointer; margin-bottom: 4px; }
 .session-item:hover { background: var(--btn-bg); }
 .session-item.active { background: var(--code-bg); }
-.session-title { font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 18px; }
+.session-title { font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 40px; }
 .session-meta { font-size: 11px; color: var(--muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.session-del { position: absolute; top: 8px; right: 6px; padding: 2px 6px; font-size: 11px; background: transparent; opacity: 0; }
-.session-item:hover .session-del { opacity: 0.6; }
-.session-del:hover { opacity: 1; background: var(--danger-bg); color: var(--danger); }
+.session-btns { position: absolute; top: 8px; right: 6px; display: flex; gap: 2px; opacity: 0; }
+.session-btn { padding: 2px 6px; font-size: 11px; background: transparent; }
+.session-item:hover .session-btns { opacity: 0.7; }
+.session-btn:hover { opacity: 1; background: var(--btn-hover); }
 .session-empty { color: var(--muted); font-size: 13px; text-align: center; padding: 20px; }
 
 /* 主区 */

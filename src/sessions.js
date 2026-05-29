@@ -1,15 +1,35 @@
 // 会话持久化：每个会话存为 sessions/{id}.json。
 // 会话绑定 agent 配置快照（含人设，但不含 apiKey）——人设是讨论语义的一部分，
 // 事后改配置不应影响已有会话；续聊时用快照的 providerId 去 live config 查当前 key。
-import { readFile, writeFile, readdir, mkdir, unlink } from 'node:fs/promises'
+import { readFile, writeFile, readdir, mkdir, unlink, rename } from 'node:fs/promises'
 import { genId } from './store.js'
 
 const SESSIONS_DIR = new URL('../sessions/', import.meta.url)
 
+// 每个会话一把写锁：写操作串行化，防并发全量覆写互相丢消息。
+// 锁值是上一次写的 Promise，新写排在它后面。
+const writeLocks = new Map()
+
+// 讨论运行锁：同一会话同时只允许一个活跃讨论，防两个 runDiscussion 各持内存副本分叉。
+const runningDiscussions = new Set()
+export function tryAcquireRun(sessionId) {
+  if (runningDiscussions.has(sessionId)) return false
+  runningDiscussions.add(sessionId)
+  return true
+}
+export function releaseRun(sessionId) {
+  runningDiscussions.delete(sessionId)
+}
+
 async function ensureDir() {
   await mkdir(SESSIONS_DIR, { recursive: true }).catch(() => {})
 }
+// 校验 sessionId 格式，防路径注入（纵深防御，不依赖 URL+fs 的副作用）
+function isValidId(id) {
+  return typeof id === 'string' && /^s_[a-z0-9]+$/i.test(id)
+}
 function sessionPath(id) {
+  if (!isValidId(id)) throw new Error('非法的会话 id')
   return new URL(`./${id}.json`, SESSIONS_DIR)
 }
 
@@ -52,7 +72,20 @@ export async function getSession(id) {
 export async function saveSession(session) {
   await ensureDir()
   session.updatedAt = Date.now()
-  await writeFile(sessionPath(session.id), JSON.stringify(session, null, 2), 'utf8')
+  const id = session.id
+  // 串行化同一会话的写：排到上一次写之后，避免并发覆写
+  const prev = writeLocks.get(id) || Promise.resolve()
+  const task = prev.catch(() => {}).then(async () => {
+    // 原子写：先写临时文件，再 rename 替换。进程中途被杀也不会留下半截 JSON。
+    const finalPath = sessionPath(id)
+    const tmpPath = new URL(`./${id}.${Date.now().toString(36)}.tmp`, SESSIONS_DIR)
+    await writeFile(tmpPath, JSON.stringify(session, null, 2), 'utf8')
+    await rename(tmpPath, finalPath)
+  })
+  writeLocks.set(id, task)
+  await task
+  // 清理：若自己是最后一个写任务，移除锁条目避免内存泄漏
+  if (writeLocks.get(id) === task) writeLocks.delete(id)
   return session
 }
 

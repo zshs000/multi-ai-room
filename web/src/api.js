@@ -46,12 +46,35 @@ export const api = {
 export function startDiscuss(opts, onEvent) {
   const controller = new AbortController()
   ;(async () => {
-    const resp = await fetch('/api/discuss', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(opts),
-      signal: controller.signal,
-    })
+    let resp
+    try {
+      resp = await fetch('/api/discuss', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(opts),
+        signal: controller.signal,
+      })
+    } catch (e) {
+      if (!controller.signal.aborted) {
+        onEvent({ type: 'error', message: `请求失败：${e.message}` })
+        onEvent({ type: 'done' })
+      }
+      return
+    }
+
+    // 后端出错时返回的是 JSON 而非 SSE 流，需识别并报错，否则前端会卡死
+    const ct = resp.headers.get('content-type') || ''
+    if (!resp.ok || !ct.includes('text/event-stream')) {
+      let msg = `服务器返回 ${resp.status}`
+      try {
+        const data = await resp.json()
+        if (data.error) msg = data.error
+      } catch {}
+      onEvent({ type: 'error', message: msg })
+      onEvent({ type: 'done' })
+      return
+    }
+
     const reader = resp.body.getReader()
     const decoder = new TextDecoder()
     let buffer = ''
@@ -60,7 +83,7 @@ export function startDiscuss(opts, onEvent) {
       try {
         chunk = await reader.read()
       } catch {
-        break // abort
+        break // 用户主动 abort
       }
       if (chunk.done) break
       buffer += decoder.decode(chunk.value, { stream: true })
@@ -76,6 +99,12 @@ export function startDiscuss(opts, onEvent) {
         }
       }
     }
-  })().catch(() => {})
+  })().catch(() => {
+    // 兜底：任何未预期错误也复位前端
+    if (!controller.signal.aborted) {
+      onEvent({ type: 'error', message: '讨论意外中断' })
+      onEvent({ type: 'done' })
+    }
+  })
   return controller
 }

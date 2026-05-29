@@ -5,7 +5,7 @@ import { loadConfig, saveConfig, publicConfig, publicProvider, annotateAgent, ge
 import { streamChat } from './src/llm.js'
 import { providerTemplates, lineupTemplates } from './src/templates.js'
 import { runRoundRobin, runModerated, runSummary } from './src/orchestrator.js'
-import { createSession, getSession, saveSession, listSessions, deleteSession, renameSession, snapshotAgents } from './src/sessions.js'
+import { createSession, getSession, saveSession, listSessions, deleteSession, renameSession, snapshotAgents, tryAcquireRun, releaseRun } from './src/sessions.js'
 
 const PORT = 3000
 const PUBLIC_DIR = new URL('./public/', import.meta.url)
@@ -44,7 +44,10 @@ async function testConnection({ protocol, baseUrl, apiKey, model }) {
     })
     return { ok: true, message: `连通正常，返回：${full.slice(0, 20)}`, latencyMs: Date.now() - start }
   } catch (e) {
-    return { ok: false, message: e.message, latencyMs: Date.now() - start }
+    // 防止错误信息里意外回显完整 apiKey
+    let msg = e.message || '未知错误'
+    if (apiKey && apiKey.length > 8) msg = msg.split(apiKey).join('***')
+    return { ok: false, message: msg, latencyMs: Date.now() - start }
   }
 }
 
@@ -64,10 +67,17 @@ async function runDiscussion(res, body, signal) {
       emit({ type: 'done' })
       return res.end()
     }
+    // 续聊：该会话若已有讨论在跑，拒绝并发
+    if (!tryAcquireRun(session.id)) {
+      emit({ type: 'error', message: '该会话正在讨论中，请等待当前轮结束。' })
+      emit({ type: 'done' })
+      return res.end()
+    }
   }
   const topic = session ? session.topic : (body.topic || '').trim()
 
   if (!config.agents.length) {
+    if (session) releaseRun(session.id)
     emit({ type: 'error', message: '还没有任何 Agent，请先到设置里添加。' })
     emit({ type: 'done' })
     return res.end()
@@ -81,6 +91,7 @@ async function runDiscussion(res, body, signal) {
       rounds: config.rounds,
       orchestration: config.orchestration || 'round-robin',
     })
+    tryAcquireRun(session.id) // 新会话 id 唯一，必定成功
   }
 
   emit({ type: 'start', sessionId: session.id, topic })
@@ -103,11 +114,16 @@ async function runDiscussion(res, body, signal) {
     emit({ type: 'user_message', content: body.interject })
   }
 
-  // 持久化每条新发言
+  // 持久化每条新发言。记录续聊前的发言数，用于判断本次是否真有新内容产出。
+  const messagesBefore = session.messages.length
   const onTurn = async (turn) => {
     session.messages.push({ seq: session.messages.length, ...turn })
     await saveSession(session)
   }
+
+  // 续聊（已有历史）时，每个 agent 只接话 1 轮，避免重跑整轮 N 次；新讨论用配置轮数。
+  const isContinuation = messagesBefore > 0 && (body.sessionId || body.interject)
+  const effectiveRounds = isContinuation ? 1 : (config.rounds || 1)
 
   try {
     // @指定 agent：只让该 agent 回应一次
@@ -115,6 +131,8 @@ async function runDiscussion(res, body, signal) {
       const agent = agents.find((a) => a.id === body.mention)
       if (agent) {
         await runRoundRobin({ agents: [agent], providers, topic, history, rounds: 1, emit, signal, onTurn })
+      } else {
+        emit({ type: 'error', message: '你 @ 的角色已不存在（可能已被删除）。' })
       }
     } else if ((session.orchestration || config.orchestration) === 'moderator') {
       // 主持人模式
@@ -128,11 +146,12 @@ async function runDiscussion(res, body, signal) {
       })
     } else {
       // 固定轮流
-      await runRoundRobin({ agents, providers, topic, history, rounds: config.rounds || 1, emit, signal, onTurn })
+      await runRoundRobin({ agents, providers, topic, history, rounds: effectiveRounds, emit, signal, onTurn })
     }
 
-    // 总结（可选，且未被中断时）
-    if (config.summarize && !signal.aborted && history.length) {
+    // 总结：仅当本次真有新发言产出、开启总结、未中断时
+    const producedNew = session.messages.length > messagesBefore
+    if (config.summarize && !signal.aborted && producedNew) {
       const sumProvider = providers.find((p) => p.id === config.moderatorProviderId) || providers[0]
       const sumModel = config.moderatorModel || sumProvider?.models?.[0] || ''
       try {
@@ -144,6 +163,8 @@ async function runDiscussion(res, body, signal) {
     }
   } catch (e) {
     if (!signal.aborted) emit({ type: 'error', message: e.message })
+  } finally {
+    releaseRun(session.id)
   }
 
   emit({ type: 'done', sessionId: session.id })
@@ -281,8 +302,14 @@ const server = createServer(async (req, res) => {
     if (method === 'POST' && pathname === '/api/agents/reorder') {
       const body = await readJsonBody(req)
       const config = await loadConfig()
-      const order = body.order || []
-      config.agents.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id))
+      const order = Array.isArray(body.order) ? body.order : []
+      // 校验：order 必须是当前 agent id 的排列。缺失的 id 用 indexOf=-1 会乱序，
+      // 故按 order 位置排序，order 中没有的 agent 稳定排到末尾。
+      const rank = (id) => {
+        const i = order.indexOf(id)
+        return i === -1 ? Number.MAX_SAFE_INTEGER : i
+      }
+      config.agents.sort((a, b) => rank(a.id) - rank(b.id))
       await saveConfig(config)
       return sendJson(res, 200, { ok: true })
     }
@@ -368,6 +395,6 @@ const server = createServer(async (req, res) => {
   }
 })
 
-server.listen(PORT, () => {
+server.listen(PORT, '127.0.0.1', () => {
   console.log(`多 AI 讨论室已启动：http://localhost:${PORT}`)
 })
