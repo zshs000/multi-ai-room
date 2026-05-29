@@ -6,6 +6,8 @@ import { genId } from './store.js'
 
 const SESSIONS_DIR = new URL('../sessions/', import.meta.url)
 
+export class SessionCorruptError extends Error {}
+
 // 每个会话一把写锁：写操作串行化，防并发全量覆写互相丢消息。
 // 锁值是上一次写的 Promise，新写排在它后面。
 const writeLocks = new Map()
@@ -61,11 +63,17 @@ export async function createSession({ topic, agents, rounds, orchestration }) {
 }
 
 export async function getSession(id) {
+  let raw
   try {
-    const raw = await readFile(sessionPath(id), 'utf8')
+    raw = await readFile(sessionPath(id), 'utf8')
+  } catch (e) {
+    if (e.code === 'ENOENT') return null
+    throw e
+  }
+  try {
     return JSON.parse(raw)
-  } catch {
-    return null
+  } catch (e) {
+    throw new SessionCorruptError(`会话文件解析失败，已停止以防历史记录静默丢失：${id}：${e.message}`)
   }
 }
 
@@ -83,9 +91,12 @@ export async function saveSession(session) {
     await rename(tmpPath, finalPath)
   })
   writeLocks.set(id, task)
-  await task
-  // 清理：若自己是最后一个写任务，移除锁条目避免内存泄漏
-  if (writeLocks.get(id) === task) writeLocks.delete(id)
+  try {
+    await task
+  } finally {
+    // 清理：若自己是最后一个写任务，移除锁条目避免内存泄漏
+    if (writeLocks.get(id) === task) writeLocks.delete(id)
+  }
   return session
 }
 
@@ -119,7 +130,9 @@ export async function listSessions() {
         messageCount: s.messages?.length || 0,
         agentNames: (s.agentsSnapshot || []).map((a) => a.name),
       })
-    } catch {}
+    } catch (e) {
+      throw new SessionCorruptError(`会话文件解析失败，已停止以防历史记录静默丢失：${f}：${e.message}`)
+    }
   }
   return sessions.sort((a, b) => b.updatedAt - a.updatedAt)
 }

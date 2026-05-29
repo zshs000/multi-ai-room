@@ -1,9 +1,9 @@
 // sessions.js 单元测试。纯函数 + 真实文件往返（用完即删，sessions/ 已 gitignore）。
 // 运行：node test/sessions.test.js
-import { readdir } from 'node:fs/promises'
+import { readdir, writeFile, unlink } from 'node:fs/promises'
 import {
   isValidId, snapshotAgents, tryAcquireRun, releaseRun,
-  createSession, getSession, saveSession, renameSession, deleteSession, listSessions,
+  createSession, getSession, saveSession, renameSession, deleteSession, listSessions, SessionCorruptError,
 } from '../src/sessions.js'
 
 let pass = 0, fail = 0
@@ -15,6 +15,15 @@ function eq(actual, expected, name) {
 function ok(cond, name) {
   if (cond) { pass++; console.log('✓', name) }
   else { fail++; console.log('✗', name) }
+}
+async function rejectsAs(fn, ErrorType, name) {
+  try {
+    await fn()
+    fail++; console.log('✗', name, '（未抛错）')
+  } catch (e) {
+    if (e instanceof ErrorType) { pass++; console.log('✓', name) }
+    else { fail++; console.log('✗', name, '\n   实际错误:', e) }
+  }
 }
 
 // ---------- isValidId：路径注入防线 ----------
@@ -64,6 +73,15 @@ try {
   eq((await getSession(s.id)).title, '新名字', 'renameSession 生效')
 
   eq(await getSession('s_nonexistent999'), null, '不存在的会话返回 null')
+
+  const corruptId = 's_corrupt999'
+  created.push(corruptId)
+  const corruptPath = new URL(`../sessions/${corruptId}.json`, import.meta.url)
+  await writeFile(corruptPath, '{"id":"s_corrupt999",', 'utf8')
+  await rejectsAs(() => getSession(corruptId), SessionCorruptError, '损坏会话 getSession 抛错而非返回 null')
+  await rejectsAs(() => listSessions(), SessionCorruptError, '损坏会话 listSessions 抛错而非静默跳过')
+  await unlink(corruptPath)
+  created.pop()
 
   // 并发写：20 个 saveSession 同时打到同一会话，验证序列化 + 原子性（永不写出半截 JSON）
   const base = await getSession(s.id)
