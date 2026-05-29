@@ -4,6 +4,8 @@ import { extname } from 'node:path'
 import { loadConfig, saveConfig, publicConfig, publicProvider, annotateAgent, genId } from './src/store.js'
 import { streamChat } from './src/llm.js'
 import { providerTemplates, lineupTemplates } from './src/templates.js'
+import { runRoundRobin, runModerated, runSummary } from './src/orchestrator.js'
+import { createSession, getSession, saveSession, listSessions, deleteSession, renameSession, snapshotAgents } from './src/sessions.js'
 
 const PORT = 3000
 const PUBLIC_DIR = new URL('./public/', import.meta.url)
@@ -28,19 +30,6 @@ function sse(res, obj) {
   res.write(`data: ${JSON.stringify(obj)}\n\n`)
 }
 
-// 构造某 agent 能看到的消息历史：自己=assistant，他人=user 带 [名字] 前缀
-function buildMessages(agent, topic, history) {
-  const messages = [{ role: 'user', content: `本次讨论的话题是：${topic}` }]
-  for (const turn of history) {
-    if (turn.agentId === agent.id) {
-      messages.push({ role: 'assistant', content: turn.content })
-    } else {
-      messages.push({ role: 'user', content: `[${turn.name}]：${turn.content}` })
-    }
-  }
-  return messages
-}
-
 // ---------- 连通性测试：发一条极简非流式请求探活 ----------
 async function testConnection({ protocol, baseUrl, apiKey, model }) {
   const start = Date.now()
@@ -60,56 +49,104 @@ async function testConnection({ protocol, baseUrl, apiKey, model }) {
 }
 
 // ---------- 讨论编排 ----------
-async function runDiscussion(res, topic, signal) {
+// ---------- 讨论编排 ----------
+async function runDiscussion(res, body, signal) {
   const config = await loadConfig()
   const discussionId = genId('d')
-  sse(res, { type: 'start', discussionId, topic, rounds: config.rounds })
+  const emit = (evt) => sse(res, { discussionId, ...evt })
+
+  // 续聊已有会话 or 新建会话
+  let session
+  if (body.sessionId) {
+    session = await getSession(body.sessionId)
+    if (!session) {
+      emit({ type: 'error', message: '会话不存在' })
+      emit({ type: 'done' })
+      return res.end()
+    }
+  }
+  const topic = session ? session.topic : (body.topic || '').trim()
 
   if (!config.agents.length) {
-    sse(res, { type: 'error', discussionId, message: '还没有任何 Agent，请先到设置里添加。' })
-    sse(res, { type: 'done', discussionId })
+    emit({ type: 'error', message: '还没有任何 Agent，请先到设置里添加。' })
+    emit({ type: 'done' })
     return res.end()
   }
 
-  const history = []
-  const rounds = config.rounds || 1
-
-  for (let r = 0; r < rounds; r++) {
-    for (const agent of config.agents) {
-      if (signal.aborted) { sse(res, { type: 'done', discussionId }); return res.end() }
-
-      // 发起前兜底校验引用完整性
-      const annotated = annotateAgent(agent, config.providers)
-      const provider = config.providers.find((p) => p.id === agent.providerId)
-      if (annotated.invalid || !provider) {
-        sse(res, { type: 'error', discussionId, agentId: agent.id, message: `${agent.name}：供应商配置失效（${annotated.invalid || 'provider_missing'}），已跳过。` })
-        continue
-      }
-      // model 不在列表则用首个兜底
-      let model = agent.model
-      if (provider.models.length && !provider.models.includes(model)) {
-        model = provider.models[0]
-      }
-
-      sse(res, { type: 'agent_start', discussionId, agentId: agent.id, name: agent.name, color: agent.color, model, providerName: provider.name, round: r + 1 })
-      try {
-        const reply = await streamChat({
-          provider,
-          model,
-          systemPrompt: agent.systemPrompt,
-          messages: buildMessages(agent, topic, history),
-          onToken: (token) => sse(res, { type: 'token', discussionId, agentId: agent.id, text: token }),
-          signal,
-        })
-        history.push({ agentId: agent.id, name: agent.name, content: reply })
-      } catch (e) {
-        if (signal.aborted) { sse(res, { type: 'done', discussionId }); return res.end() }
-        sse(res, { type: 'error', discussionId, agentId: agent.id, message: `${agent.name} 出错：${e.message}` })
-      }
-      sse(res, { type: 'agent_end', discussionId, agentId: agent.id })
-    }
+  // 新建会话：用当前 agent 配置做快照
+  if (!session) {
+    session = await createSession({
+      topic,
+      agents: config.agents,
+      rounds: config.rounds,
+      orchestration: config.orchestration || 'round-robin',
+    })
   }
-  sse(res, { type: 'done', discussionId })
+
+  emit({ type: 'start', sessionId: session.id, topic })
+
+  // 续聊时用会话快照的 agent（保人设语义）；新会话也用快照保持一致
+  const agents = session.agentsSnapshot
+  const providers = config.providers
+
+  // 重建历史（续聊时从已存消息恢复）
+  const history = session.messages.map((m) => ({
+    type: m.type, agentId: m.agentId, name: m.name, color: m.color, round: m.round, content: m.content,
+  }))
+
+  // 用户插话：作为一条 user 消息进入历史并持久化
+  if (body.interject) {
+    const turn = { type: 'user', agentId: null, name: '用户', color: '#888', round: 0, content: body.interject }
+    history.push(turn)
+    session.messages.push({ seq: session.messages.length, ...turn })
+    await saveSession(session)
+    emit({ type: 'user_message', content: body.interject })
+  }
+
+  // 持久化每条新发言
+  const onTurn = async (turn) => {
+    session.messages.push({ seq: session.messages.length, ...turn })
+    await saveSession(session)
+  }
+
+  try {
+    // @指定 agent：只让该 agent 回应一次
+    if (body.mention) {
+      const agent = agents.find((a) => a.id === body.mention)
+      if (agent) {
+        await runRoundRobin({ agents: [agent], providers, topic, history, rounds: 1, emit, signal, onTurn })
+      }
+    } else if ((session.orchestration || config.orchestration) === 'moderator') {
+      // 主持人模式
+      const modProvider = providers.find((p) => p.id === config.moderatorProviderId) || providers[0]
+      const modModel = config.moderatorModel || modProvider?.models?.[0] || ''
+      await runModerated({
+        agents, providers, topic, history,
+        maxTurns: config.maxTurns || (agents.length * (config.rounds || 2)),
+        moderator: { provider: modProvider, model: modModel },
+        emit, signal, onTurn,
+      })
+    } else {
+      // 固定轮流
+      await runRoundRobin({ agents, providers, topic, history, rounds: config.rounds || 1, emit, signal, onTurn })
+    }
+
+    // 总结（可选，且未被中断时）
+    if (config.summarize && !signal.aborted && history.length) {
+      const sumProvider = providers.find((p) => p.id === config.moderatorProviderId) || providers[0]
+      const sumModel = config.moderatorModel || sumProvider?.models?.[0] || ''
+      try {
+        const summary = await runSummary({ summarizer: { provider: sumProvider, model: sumModel }, topic, history, emit, signal })
+        await onTurn({ type: 'agent', agentId: '__summary__', name: '总结', color: '#5856d6', round: 0, content: summary })
+      } catch (e) {
+        if (!signal.aborted) emit({ type: 'error', message: `总结出错：${e.message}` })
+      }
+    }
+  } catch (e) {
+    if (!signal.aborted) emit({ type: 'error', message: e.message })
+  }
+
+  emit({ type: 'done', sessionId: session.id })
   res.end()
 }
 
@@ -276,15 +313,44 @@ const server = createServer(async (req, res) => {
       const body = await readJsonBody(req)
       const config = await loadConfig()
       if (body.rounds !== undefined) config.rounds = Number(body.rounds) || 1
+      if (body.orchestration !== undefined) config.orchestration = body.orchestration === 'moderator' ? 'moderator' : 'round-robin'
+      if (body.moderatorProviderId !== undefined) config.moderatorProviderId = body.moderatorProviderId
+      if (body.moderatorModel !== undefined) config.moderatorModel = body.moderatorModel
+      if (body.maxTurns !== undefined) config.maxTurns = Number(body.maxTurns) || 8
+      if (body.summarize !== undefined) config.summarize = !!body.summarize
       await saveConfig(config)
       return sendJson(res, 200, { ok: true })
+    }
+
+    // ===== 会话管理 =====
+    if (method === 'GET' && pathname === '/api/sessions') {
+      return sendJson(res, 200, await listSessions())
+    }
+    const sessMatch = pathname.match(/^\/api\/sessions\/([^/]+)$/)
+    if (sessMatch) {
+      const id = sessMatch[1]
+      if (method === 'GET') {
+        const s = await getSession(id)
+        return s ? sendJson(res, 200, s) : sendJson(res, 404, { ok: false, error: '会话不存在' })
+      }
+      if (method === 'DELETE') {
+        await deleteSession(id)
+        return sendJson(res, 200, { ok: true })
+      }
+      if (method === 'PUT') {
+        const body = await readJsonBody(req)
+        const s = await renameSession(id, body.title || '未命名讨论')
+        return s ? sendJson(res, 200, { ok: true }) : sendJson(res, 404, { ok: false, error: '会话不存在' })
+      }
     }
 
     // ===== 讨论（SSE）=====
     if (method === 'POST' && pathname === '/api/discuss') {
       const body = await readJsonBody(req)
-      const topic = (body.topic || '').trim()
-      if (!topic) return sendJson(res, 400, { ok: false, error: '缺少话题' })
+      // 新讨论需要 topic；续聊（带 sessionId）则不需要
+      if (!body.sessionId && !(body.topic || '').trim()) {
+        return sendJson(res, 400, { ok: false, error: '缺少话题' })
+      }
       res.writeHead(200, {
         'Content-Type': 'text/event-stream; charset=utf-8',
         'Cache-Control': 'no-cache',
@@ -292,7 +358,7 @@ const server = createServer(async (req, res) => {
       })
       const ac = new AbortController()
       req.on('close', () => ac.abort()) // 前端断开即中断 LLM 请求
-      return runDiscussion(res, topic, ac.signal)
+      return runDiscussion(res, body, ac.signal)
     }
 
     // 其它走静态

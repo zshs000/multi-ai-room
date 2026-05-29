@@ -3,11 +3,12 @@ import { readFile, writeFile } from 'node:fs/promises'
 
 const CONFIG_PATH = new URL('../config.json', import.meta.url)
 
-// 简单确定性 id 生成（不依赖随机数，便于测试与可读性）
+// id 生成：时间戳 + 自增 + 随机后缀，跨重启不撞。
 let idCounter = 0
 function genId(prefix) {
   idCounter += 1
-  return `${prefix}_${Date.now().toString(36)}${idCounter}`
+  const rand = Math.random().toString(36).slice(2, 6)
+  return `${prefix}_${Date.now().toString(36)}${idCounter}${rand}`
 }
 
 // ---------- 读写底层 ----------

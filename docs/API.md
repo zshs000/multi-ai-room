@@ -108,23 +108,49 @@
 `POST /api/discuss`
 请求体：
 ```jsonc
-{ "topic": "我们要不要做登录功能？" }
+{
+  "topic": "我们要不要做登录功能？",
+  "sessionId": "s_xxx",   // 可选：续聊已有会话；不传则新建会话
+  "interject": "你们再考虑下成本",  // 可选：用户插话内容（续聊时）
+  "mention": "a_xxx"      // 可选：@指定 agent（仅该 agent 回应）
+}
 ```
 响应：`Content-Type: text/event-stream`，每个事件为 `data: {json}\n\n`。
-后端在流开始时先发一个 `start` 事件，携带本场 `discussionId`（后续中断/多会话据此定位）。
+后端在流开始时先发 `start` 事件，携带 `discussionId` 和 `sessionId`。
+
+编排模式由全局设置 `orchestration` 决定：`round-robin`（固定轮流）| `moderator`（主持人调度）。
 
 ### SSE 事件类型
 | type | 字段 | 含义 |
 |---|---|---|
-| `start` | `discussionId, topic, rounds` | 整场开始，返回会话 id |
-| `agent_start` | `discussionId, agentId, name, color, model, providerName, round` | 某 agent 开始发言（前端建新气泡，可显示它用的模型） |
-| `token` | `discussionId, agentId, text` | 流式增量文本，追加到当前气泡 |
+| `start` | `discussionId, sessionId, topic` | 整场开始，返回会话 id |
+| `moderator_decision` | `next?, name?, reason, shouldEnd?` | 主持人模式：宣布下一个发言者及理由（透明展示调度，非黑箱） |
+| `agent_start` | `discussionId, agentId, name, color, model, providerName, round` | 某 agent 开始发言 |
+| `token` | `discussionId, agentId, text` | 流式增量文本 |
 | `agent_end` | `discussionId, agentId` | 当前 agent 发言结束 |
-| `error` | `discussionId, message, agentId?` | 出错（某 agent 失败不中断整场，记录后继续下一个） |
-| `done` | `discussionId` | 整场讨论结束 |
+| `error` | `discussionId, message, agentId?` | 出错（单点失败不中断整场） |
+| `done` | `discussionId, sessionId` | 整场结束 |
 
-> **心跳**：后端每 ~15s 无数据时发送注释行 `: ping\n\n` 保活，前端忽略。
-> **中断**（路线图 3.2）：前端关闭 fetch 的 ReadableStream 即可让后端 abort 当前 LLM 请求；如需服务端显式确认，可 `POST /api/discuss/stop` 带 `{discussionId}`。
+> 总结发言用特殊 `agentId: "__summary__"`，前端可特殊样式呈现。
+> **心跳**：后端每 ~15s 无数据时发送 `: ping\n\n` 保活。
+> **中断**：前端关闭 fetch 流即让后端 abort 当前 LLM 请求。
+
+### 会话管理（持久化）
+| 方法 | 路径 | 请求体 | 作用 |
+|---|---|---|---|
+| GET | `/api/sessions` | — | 列出所有会话摘要（倒序，不含消息体） |
+| GET | `/api/sessions/:id` | — | 取单个会话完整内容（含 messages、agent 快照） |
+| DELETE | `/api/sessions/:id` | — | 删除会话 |
+| PUT | `/api/sessions/:id` | `{title}` | 重命名会话 |
+
+- 会话存于 `sessions/{id}.json`（已 gitignore），含 **agent 配置快照**（人设是讨论语义，事后改配置不影响旧会话）。
+- 快照**不含 apiKey**；续聊时用快照的 providerId 去 live config 查当前 key，provider 已删则降级提示。
+
+### 全局编排设置
+`PUT /api/settings` 请求体扩展：
+```jsonc
+{ "rounds": 2, "orchestration": "round-robin"|"moderator", "moderatorProviderId": "p_x", "moderatorModel": "...", "maxTurns": 8, "summarize": true }
+```
 
 ---
 
