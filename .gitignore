@@ -5,9 +5,10 @@ web/node_modules/
 # 含真实 API Key 的本地配置，不入库
 config.json
 
-# 构建产物
+# 构建产物（由 web/ 源码 npm run build 生成，不入库）
 dist/
-public/dist/
+public/assets/
+public/index.html
 
 # 日志与临时
 *.log

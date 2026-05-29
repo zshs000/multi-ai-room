@@ -1,9 +1,13 @@
 {
   "name": "multi-ai-room",
   "version": "0.1.0",
-  "description": "多 AI 讨论室：a→b→c 轮流发言，共享对话历史",
+  "description": "多 AI 讨论室：多模型 Agent 同台轮流讨论",
   "type": "module",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "build": "cd web && npm install && npm run build",
+    "dev:web": "cd web && npm run dev",
+    "test": "node test/adapters.test.js && node test/store.test.js"
   }
 }
+
