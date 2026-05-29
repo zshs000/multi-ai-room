@@ -6,6 +6,16 @@ import { streamChat } from './src/llm.js'
 import { providerTemplates, lineupTemplates } from './src/templates.js'
 import { runRoundRobin, runModerated, runSummary, resolveRounds } from './src/orchestrator.js'
 import { createSession, getSession, saveSession, listSessions, deleteSession, renameSession, snapshotAgents, tryAcquireRun, releaseRun } from './src/sessions.js'
+import {
+  DEFAULT_AGENT_COLOR,
+  DEFAULT_MAX_TURNS,
+  DEFAULT_ORCHESTRATION,
+  MODERATOR_ORCHESTRATION,
+  SUMMARY_AGENT_COLOR,
+  SUMMARY_AGENT_ID,
+  SUMMARY_AGENT_NAME,
+  USER_MESSAGE_COLOR,
+} from './src/constants.js'
 
 const PORT = Number(process.env.PORT) || 3000
 const PUBLIC_DIR = new URL('./public/', import.meta.url)
@@ -101,7 +111,7 @@ async function runDiscussion(res, body, signal) {
       topic,
       agents: config.agents,
       rounds: config.rounds,
-      orchestration: config.orchestration || 'round-robin',
+      orchestration: config.orchestration || DEFAULT_ORCHESTRATION,
     })
     createdNew = true
     tryAcquireRun(session.id) // 新会话 id 唯一，必定成功
@@ -120,7 +130,7 @@ async function runDiscussion(res, body, signal) {
 
   // 用户插话：作为一条 user 消息进入历史并持久化
   if (body.interject) {
-    const turn = { type: 'user', agentId: null, name: '用户', color: '#888', round: 0, content: body.interject }
+    const turn = { type: 'user', agentId: null, name: '用户', color: USER_MESSAGE_COLOR, round: 0, content: body.interject }
     history.push(turn)
     session.messages.push({ seq: session.messages.length, ...turn })
     await saveSession(session)
@@ -136,7 +146,7 @@ async function runDiscussion(res, body, signal) {
 
   // 续聊（已有历史）时收敛轮数，避免重跑整场；轮数决策见 orchestrator.resolveRounds。
   const isContinuation = messagesBefore > 0 && (body.sessionId || body.interject)
-  const mode = (session.orchestration || config.orchestration) === 'moderator' ? 'moderator' : 'round-robin'
+  const mode = (session.orchestration || config.orchestration) === MODERATOR_ORCHESTRATION ? MODERATOR_ORCHESTRATION : DEFAULT_ORCHESTRATION
 
   try {
     // @指定 agent：只让该 agent 回应一次
@@ -147,7 +157,7 @@ async function runDiscussion(res, body, signal) {
       } else {
         emit({ type: 'error', message: '你 @ 的角色已不存在（可能已被删除）。' })
       }
-    } else if (mode === 'moderator') {
+    } else if (mode === MODERATOR_ORCHESTRATION) {
       // 主持人模式
       const modProvider = providers.find((p) => p.id === config.moderatorProviderId) || providers[0]
       const modModel = config.moderatorModel || modProvider?.models?.[0] || ''
@@ -173,7 +183,7 @@ async function runDiscussion(res, body, signal) {
       const sumModel = config.moderatorModel || sumProvider?.models?.[0] || ''
       try {
         const summary = await runSummary({ summarizer: { provider: sumProvider, model: sumModel }, topic, messages: session.messages, emit, signal })
-        await onTurn({ type: 'agent', agentId: '__summary__', name: '总结', color: '#5856d6', round: 0, content: summary })
+        await onTurn({ type: 'agent', agentId: SUMMARY_AGENT_ID, name: SUMMARY_AGENT_NAME, color: SUMMARY_AGENT_COLOR, round: 0, content: summary })
       } catch (e) {
         if (!signal.aborted) emit({ type: 'error', message: `总结出错：${e.message}` })
       }
@@ -313,7 +323,7 @@ const server = createServer(async (req, res) => {
       const agent = {
         id: genId('a'),
         name: body.name || '未命名',
-        color: body.color || '#888888',
+        color: body.color || DEFAULT_AGENT_COLOR,
         systemPrompt: body.systemPrompt || '',
         providerId: body.providerId || '',
         model: body.model || '',
@@ -363,10 +373,10 @@ const server = createServer(async (req, res) => {
       const body = await readJsonBody(req)
       const config = await loadConfig()
       if (body.rounds !== undefined) config.rounds = Number(body.rounds) || 1
-      if (body.orchestration !== undefined) config.orchestration = body.orchestration === 'moderator' ? 'moderator' : 'round-robin'
+      if (body.orchestration !== undefined) config.orchestration = body.orchestration === MODERATOR_ORCHESTRATION ? MODERATOR_ORCHESTRATION : DEFAULT_ORCHESTRATION
       if (body.moderatorProviderId !== undefined) config.moderatorProviderId = body.moderatorProviderId
       if (body.moderatorModel !== undefined) config.moderatorModel = body.moderatorModel
-      if (body.maxTurns !== undefined) config.maxTurns = Number(body.maxTurns) || 8
+      if (body.maxTurns !== undefined) config.maxTurns = Number(body.maxTurns) || DEFAULT_MAX_TURNS
       if (body.summarize !== undefined) config.summarize = !!body.summarize
       await saveConfig(config)
       return sendJson(res, 200, { ok: true })

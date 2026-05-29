@@ -1,5 +1,6 @@
 // 配置存储：读写 config.json，负责旧结构迁移、id 生成、密钥脱敏、引用完整性。
 import { readFile, writeFile, rename } from 'node:fs/promises'
+import { DEFAULT_AGENT_COLOR, DEFAULT_MAX_TURNS, DEFAULT_ORCHESTRATION, DEFAULT_ROUNDS } from './constants.js'
 
 const CONFIG_PATH = new URL('../config.json', import.meta.url)
 
@@ -87,7 +88,7 @@ export function migrate(config) {
   const agents = (config.agents || []).map((a) => ({
     id: genId('a'),
     name: a.name,
-    color: a.color || '#888888',
+    color: a.color || DEFAULT_AGENT_COLOR,
     systemPrompt: a.systemPrompt || '',
     providerId: provider.id,
     model: config.model || '',
@@ -95,7 +96,7 @@ export function migrate(config) {
   return {
     providers: [provider],
     agents,
-    rounds: config.rounds || 2,
+    rounds: config.rounds || DEFAULT_ROUNDS,
   }
 }
 
@@ -144,10 +145,10 @@ export function publicConfig(config) {
     providers: config.providers.map(publicProvider),
     agents: config.agents.map((a) => annotateAgent(a, config.providers)),
     rounds: config.rounds,
-    orchestration: config.orchestration || 'round-robin',
+    orchestration: config.orchestration || DEFAULT_ORCHESTRATION,
     moderatorProviderId: config.moderatorProviderId || '',
     moderatorModel: config.moderatorModel || '',
-    maxTurns: config.maxTurns || 8,
+    maxTurns: config.maxTurns || DEFAULT_MAX_TURNS,
     summarize: !!config.summarize,
   }
 }

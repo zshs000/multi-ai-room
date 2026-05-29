@@ -1,6 +1,7 @@
 // orchestrator.js 单元测试（纯函数，不触网）。运行：node test/orchestrator.test.js
 // 重点覆盖"可见性模型"的核心——buildMessages 的角色映射，以及 provider 解析与主持人 JSON 解析的容错。
 import { buildMessages, resolveProvider, parseModeratorDecision, resolveRounds, buildTranscript } from '../src/orchestrator.js'
+import { SUMMARY_AGENT_ID } from '../src/constants.js'
 
 let pass = 0, fail = 0
 function eq(actual, expected, name) {
@@ -79,7 +80,7 @@ const sessionMessages = [
   { seq: 0, type: 'agent', agentId: 'a1', name: '甲', content: '观点A' },
   { seq: 1, type: 'user', agentId: null, name: '用户', content: '追问X' },
   { seq: 2, type: 'agent', agentId: 'a2', name: '乙', content: '观点B' },
-  { seq: 3, type: 'agent', agentId: '__summary__', name: '总结', content: '上次的总结' },
+  { seq: 3, type: 'agent', agentId: SUMMARY_AGENT_ID, name: '总结', content: '上次的总结' },
 ]
 const tr = buildTranscript(sessionMessages)
 ok(tr.includes('[甲]：观点A') && tr.includes('[乙]：观点B'), 'transcript 含各 agent 发言')

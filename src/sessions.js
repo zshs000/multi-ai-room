@@ -3,6 +3,7 @@
 // 事后改配置不应影响已有会话；续聊时用快照的 providerId 去 live config 查当前 key。
 import { readFile, writeFile, readdir, mkdir, unlink, rename } from 'node:fs/promises'
 import { genId } from './store.js'
+import { DEFAULT_ORCHESTRATION, DEFAULT_ROUNDS, SESSION_TITLE_MAX_LENGTH } from './constants.js'
 
 const SESSIONS_DIR = new URL('../sessions/', import.meta.url)
 
@@ -53,8 +54,8 @@ export async function createSession({ topic, agents, rounds, orchestration }) {
     topic: topic || '',
     createdAt: now,
     updatedAt: now,
-    rounds: rounds || 2,
-    orchestration: orchestration || 'round-robin',
+    rounds: rounds || DEFAULT_ROUNDS,
+    orchestration: orchestration || DEFAULT_ORCHESTRATION,
     agentsSnapshot: snapshotAgents(agents),
     messages: [], // { seq, type:'user'|'agent', agentId, name, color, model, providerName, round, content }
   }
@@ -149,7 +150,7 @@ export async function deleteSession(id) {
 export async function renameSession(id, title) {
   const session = await getSession(id)
   if (!session) return null
-  session.title = title.slice(0, 60)
+  session.title = title.slice(0, SESSION_TITLE_MAX_LENGTH)
   await saveSession(session)
   return session
 }

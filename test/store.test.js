@@ -1,5 +1,6 @@
 // store.js 单元测试（不触网，不写真实 config.json）。运行：node test/store.test.js
 import { migrate, publicProvider, publicConfig, annotateAgent, maskKey } from '../src/store.js'
+import { DEFAULT_MAX_TURNS, DEFAULT_ORCHESTRATION } from '../src/constants.js'
 
 let pass = 0, fail = 0
 function eq(actual, expected, name) {
@@ -62,8 +63,8 @@ eq(pc.maxTurns, 12, 'publicConfig 回吐 maxTurns')
 // 缺省兜底
 const pcEmpty = publicConfig({ providers: [], agents: [], rounds: 2 })
 eq(pcEmpty.summarize, false, 'summarize 缺省为 false')
-eq(pcEmpty.orchestration, 'round-robin', 'orchestration 缺省为 round-robin')
-eq(pcEmpty.maxTurns, 8, 'maxTurns 缺省为 8')
+eq(pcEmpty.orchestration, DEFAULT_ORCHESTRATION, 'orchestration 缺省为 round-robin')
+eq(pcEmpty.maxTurns, DEFAULT_MAX_TURNS, 'maxTurns 缺省为 8')
 
 console.log(`\n结果: ${pass} 通过, ${fail} 失败`)
 process.exit(fail ? 1 : 0)

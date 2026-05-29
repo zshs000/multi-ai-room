@@ -1,6 +1,13 @@
 // 讨论编排器：支持固定轮流 / 主持人调度两种模式，流式产出事件。
 // 通过 emit(event) 回调推送事件，调用方（server）负责转成 SSE。
 import { streamChat } from './llm.js'
+import {
+  DEFAULT_ROUNDS,
+  MODERATOR_ORCHESTRATION,
+  SUMMARY_AGENT_COLOR,
+  SUMMARY_AGENT_ID,
+  SUMMARY_AGENT_NAME,
+} from './constants.js'
 
 // 构造某 agent 能看到的消息历史。
 // 自己的发言=assistant；他人发言/用户插话=user 带 [名字] 前缀。
@@ -150,10 +157,10 @@ async function runModerated({ agents, providers, topic, history, maxTurns, moder
 // ---------- 总结 ----------
 // 从消息列表构建讨论记录文本。事实源应是持久化的 session.messages，
 // 而非编排内部的 history（两者靠双写同步，易漂移）——统一从一个源构建。
-// 排除既往的总结消息（__summary__），避免把上次总结当成讨论内容再喂进去。
+// 排除既往的总结消息，避免把上次总结当成讨论内容再喂进去。
 function buildTranscript(messages) {
   return messages
-    .filter((t) => t.agentId !== '__summary__')
+    .filter((t) => t.agentId !== SUMMARY_AGENT_ID)
     .map((t) => `[${t.type === 'user' ? '用户' : t.name}]：${t.content}`)
     .join('\n\n')
 }
@@ -161,15 +168,15 @@ function buildTranscript(messages) {
 async function runSummary({ summarizer, topic, messages, emit, signal }) {
   const { provider, model } = summarizer
   const transcript = buildTranscript(messages)
-  emit({ type: 'agent_start', agentId: '__summary__', name: '总结', color: '#5856d6', model, providerName: provider.name, round: 0 })
+  emit({ type: 'agent_start', agentId: SUMMARY_AGENT_ID, name: SUMMARY_AGENT_NAME, color: SUMMARY_AGENT_COLOR, model, providerName: provider.name, round: 0 })
   const reply = await streamChat({
     provider, model,
     systemPrompt: '你是讨论总结者。请客观提炼以下讨论的核心共识、主要分歧和结论，条理清晰，用 markdown。',
     messages: [{ role: 'user', content: `话题：${topic}\n\n讨论记录：\n${transcript}\n\n请总结。` }],
-    onToken: (t) => emit({ type: 'token', agentId: '__summary__', text: t }),
+    onToken: (t) => emit({ type: 'token', agentId: SUMMARY_AGENT_ID, text: t }),
     signal,
   })
-  emit({ type: 'agent_end', agentId: '__summary__' })
+  emit({ type: 'agent_end', agentId: SUMMARY_AGENT_ID })
   return reply
 }
 
@@ -181,9 +188,9 @@ async function runSummary({ summarizer, topic, messages, emit, signal }) {
 // 避免主持人模式续聊跑满 maxTurns 造成额外 API 消耗与不可控体验。
 function resolveRounds({ mode, isContinuation, agentCount, rounds, maxTurns }) {
   const r = rounds || 1
-  if (mode === 'moderator') {
+  if (mode === MODERATOR_ORCHESTRATION) {
     if (isContinuation) return { maxTurns: agentCount } // 约一轮：每人一次的量级
-    return { maxTurns: maxTurns || (agentCount * (rounds || 2)) }
+    return { maxTurns: maxTurns || (agentCount * (rounds || DEFAULT_ROUNDS)) }
   }
   // round-robin
   return { rounds: isContinuation ? 1 : r }
