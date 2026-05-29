@@ -1,0 +1,9 @@
+{
+  "name": "multi-ai-room",
+  "version": "0.1.0",
+  "description": "多 AI 讨论室：a→b→c 轮流发言，共享对话历史",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  }
+}
