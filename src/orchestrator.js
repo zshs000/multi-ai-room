@@ -69,8 +69,13 @@ ${roster}
     onToken: (t) => { raw += t },
     signal,
   })
-  // 容错解析 JSON（可能被包裹在 ```json 里）
-  const match = raw.match(/\{[\s\S]*\}/)
+  return parseModeratorDecision(raw)
+}
+
+// 从主持人 LLM 的原始输出里提取决策 JSON（可能被 ```json 包裹或夹在解释文字中）。
+// 解析失败一律返回 null，让上层走兜底逻辑。
+function parseModeratorDecision(raw) {
+  const match = (raw || '').match(/\{[\s\S]*\}/)
   if (!match) return null
   try {
     return JSON.parse(match[0])
@@ -158,4 +163,4 @@ async function runSummary({ summarizer, topic, history, emit, signal }) {
   return reply
 }
 
-export { buildMessages, resolveProvider, speak, runRoundRobin, runModerated, runSummary, moderatorDecide }
+export { buildMessages, resolveProvider, speak, runRoundRobin, runModerated, runSummary, moderatorDecide, parseModeratorDecision }

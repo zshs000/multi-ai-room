@@ -25,7 +25,7 @@ async function ensureDir() {
   await mkdir(SESSIONS_DIR, { recursive: true }).catch(() => {})
 }
 // 校验 sessionId 格式，防路径注入（纵深防御，不依赖 URL+fs 的副作用）
-function isValidId(id) {
+export function isValidId(id) {
   return typeof id === 'string' && /^s_[a-z0-9]+$/i.test(id)
 }
 function sessionPath(id) {
