@@ -233,7 +233,7 @@ function providerName(id) {
             <div class="toolbar">
               <button @click="showLineups = true">⚡ 载入阵容模板</button>
             </div>
-            <p class="hint" style="margin-bottom:10px">提示：修改角色只影响新讨论；已有会话保留创建时的角色快照。</p>
+            <p class="hint hint-spaced">提示：修改角色只影响新讨论；已有会话保留创建时的角色快照。</p>
             <div v-for="(a, idx) in agents" :key="a.id" class="card" :style="{ borderLeftColor: a.color }">
               <div class="order-btns">
                 <button class="mini" :disabled="idx === 0" @click="moveAgent(idx, -1)">▲</button>
@@ -268,7 +268,7 @@ function providerName(id) {
             </div>
             <label>供应商</label>
             <div class="row">
-              <select v-model="editingAgent.providerId" @change="onAgentProviderChange" style="flex:1">
+              <select v-model="editingAgent.providerId" @change="onAgentProviderChange" class="row-fill">
                 <option v-for="p in providers" :key="p.id" :value="p.id">{{ p.name }} ({{ p.protocol }})</option>
               </select>
               <button @click="startInlineProvider" title="新建供应商">+</button>
@@ -280,14 +280,14 @@ function providerName(id) {
               <div class="templates">
                 <button v-for="t in provTemplates" :key="t.name" class="tpl" @click="applyInlineTemplate(t)">{{ t.name }}</button>
               </div>
-              <input v-model="inlineProvider.name" placeholder="名称" style="margin-top:8px" />
-              <select v-model="inlineProvider.protocol" style="margin-top:8px">
+              <input v-model="inlineProvider.name" placeholder="名称" class="stack-input" />
+              <select v-model="inlineProvider.protocol" class="stack-input">
                 <option value="openai">OpenAI 兼容</option>
                 <option value="anthropic">Anthropic (Claude)</option>
               </select>
-              <input v-model="inlineProvider.baseUrl" placeholder="https://api.deepseek.com" style="margin-top:8px" />
-              <input v-model="inlineProvider.apiKey" type="password" placeholder="API Key" style="margin-top:8px" />
-              <input v-model="inlineProvider.modelsText" placeholder="模型，逗号分隔" style="margin-top:8px" />
+              <input v-model="inlineProvider.baseUrl" placeholder="https://api.deepseek.com" class="stack-input" />
+              <input v-model="inlineProvider.apiKey" type="password" placeholder="API Key" class="stack-input" />
+              <input v-model="inlineProvider.modelsText" placeholder="模型，逗号分隔" class="stack-input" />
               <div class="form-actions">
                 <button @click="inlineProvider = null">取消</button>
                 <button class="primary" @click="saveInlineProvider" :disabled="!inlineProvider.name">创建并选用</button>
@@ -366,7 +366,7 @@ function providerName(id) {
 
           <template v-if="orchestration === DEFAULT_ORCHESTRATION">
             <label>讨论轮数（每个 Agent 各发言几轮）</label>
-            <input type="number" v-model="rounds" min="1" max="10" style="width: 120px" />
+            <input type="number" v-model="rounds" min="1" max="10" class="number-short" />
           </template>
 
           <template v-else>
@@ -380,7 +380,7 @@ function providerName(id) {
               <option v-for="m in moderatorModels" :key="m" :value="m">{{ m }}</option>
             </select>
             <label>最大发言轮次（防止无限讨论）</label>
-            <input type="number" v-model="maxTurns" min="2" max="30" style="width: 120px" />
+            <input type="number" v-model="maxTurns" min="2" max="30" class="number-short" />
           </template>
 
           <label>讨论结束后自动总结</label>
@@ -440,6 +440,10 @@ function providerName(id) {
 
 .block { width: 100%; padding: 12px; margin-top: 6px; }
 .form-actions { display: flex; gap: 10px; justify-content: flex-end; align-items: center; margin-top: 20px; }
+.hint-spaced { margin-bottom: 10px; }
+.row-fill { flex: 1; }
+.stack-input { margin-top: 8px; }
+.number-short { width: 120px; }
 
 /* 居中偏上的保存提示 toast（与主界面 app-toast 统一）*/
 .save-toast {
