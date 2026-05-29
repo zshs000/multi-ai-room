@@ -160,7 +160,7 @@ async function runDiscussion(res, body, signal) {
       const sumProvider = providers.find((p) => p.id === config.moderatorProviderId) || providers[0]
       const sumModel = config.moderatorModel || sumProvider?.models?.[0] || ''
       try {
-        const summary = await runSummary({ summarizer: { provider: sumProvider, model: sumModel }, topic, history, emit, signal })
+        const summary = await runSummary({ summarizer: { provider: sumProvider, model: sumModel }, topic, messages: session.messages, emit, signal })
         await onTurn({ type: 'agent', agentId: '__summary__', name: '总结', color: '#5856d6', round: 0, content: summary })
       } catch (e) {
         if (!signal.aborted) emit({ type: 'error', message: `总结出错：${e.message}` })

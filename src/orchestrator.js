@@ -148,9 +148,19 @@ async function runModerated({ agents, providers, topic, history, maxTurns, moder
 }
 
 // ---------- 总结 ----------
-async function runSummary({ summarizer, topic, history, emit, signal }) {
-  const { provider, model, agent } = summarizer
-  const transcript = history.map((t) => `[${t.type === 'user' ? '用户' : t.name}]：${t.content}`).join('\n\n')
+// 从消息列表构建讨论记录文本。事实源应是持久化的 session.messages，
+// 而非编排内部的 history（两者靠双写同步，易漂移）——统一从一个源构建。
+// 排除既往的总结消息（__summary__），避免把上次总结当成讨论内容再喂进去。
+function buildTranscript(messages) {
+  return messages
+    .filter((t) => t.agentId !== '__summary__')
+    .map((t) => `[${t.type === 'user' ? '用户' : t.name}]：${t.content}`)
+    .join('\n\n')
+}
+
+async function runSummary({ summarizer, topic, messages, emit, signal }) {
+  const { provider, model } = summarizer
+  const transcript = buildTranscript(messages)
   emit({ type: 'agent_start', agentId: '__summary__', name: '总结', color: '#5856d6', model, providerName: provider.name, round: 0 })
   const reply = await streamChat({
     provider, model,
@@ -179,4 +189,4 @@ function resolveRounds({ mode, isContinuation, agentCount, rounds, maxTurns }) {
   return { rounds: isContinuation ? 1 : r }
 }
 
-export { buildMessages, resolveProvider, speak, runRoundRobin, runModerated, runSummary, moderatorDecide, parseModeratorDecision, resolveRounds }
+export { buildMessages, resolveProvider, speak, runRoundRobin, runModerated, runSummary, moderatorDecide, parseModeratorDecision, resolveRounds, buildTranscript }
