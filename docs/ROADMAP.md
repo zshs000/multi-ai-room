@@ -33,14 +33,14 @@ Config   { providers: Provider[], agents: Agent[], rounds, ... }
 
 ### 第一层 · 地基重构（架构正确性）
 目标：把原型升级为工程化骨架，多模型同台跑通。
-- [ ] 1.1 Vite + Vue 3 脚手架，前端迁移到组件化
-- [ ] 1.2 后端抽出适配器层：`OpenAIAdapter` + `AnthropicAdapter`，注册表按 protocol 路由
-- [ ] 1.3 数据模型升级为 Provider/Agent 分离，配置读写接口适配（含旧 config 自动迁移）
-- [ ] 1.4 讨论编排接 Provider：每个 Agent 用各自 provider+model 发言
-- [ ] 1.5 连通性测试接口 `POST /api/providers/test`（前置：地基调试期就需要它验证 key，不必靠真跑讨论）
+- [x] 1.1 Vite + Vue 3 脚手架，前端迁移到组件化
+- [x] 1.2 后端抽出适配器层：`OpenAIAdapter` + `AnthropicAdapter`，注册表按 protocol 路由
+- [x] 1.3 数据模型升级为 Provider/Agent 分离，配置读写接口适配（含旧 config 自动迁移）
+- [x] 1.4 讨论编排接 Provider：每个 Agent 用各自 provider+model 发言
+- [x] 1.5 连通性测试接口 `POST /api/providers/test`（前置：地基调试期就需要它验证 key，不必靠真跑讨论）
 - **验收**：
-  - 能配 ≥2 个不同协议的 provider（如 DeepSeek + Claude），3 个 agent 分属不同 provider，同台流式讨论跑通。
-  - 故意给某 provider 填错 key，该 agent 报错但整场不崩（验证 §6 错误隔离不变量）。
+  - [x] 能配 ≥2 个不同协议的 provider（如 DeepSeek + Claude），3 个 agent 分属不同 provider，同台流式讨论跑通。
+  - [x] 故意给某 provider 填错 key，该 agent 报错但整场不崩（验证 §6 错误隔离不变量）。
 
 ### 第二层 · Agent 与供应商可视化管理（产品灵魂）
 目标：全程界面操作，不碰 config.json。
@@ -79,3 +79,7 @@ Config   { providers: Provider[], agents: Agent[], rounds, ... }
 | 日期 | 阶段 | 内容 | commit |
 |---|---|---|---|
 | 2026-05-29 | 0 | 项目纳入 git，原型固化 | f5c7192 |
+| 2026-05-29 | 文档 | 路线图+接口契约，经子代理评审修订 | d38ad97 |
+| 2026-05-29 | 1.2 | 适配器层（OpenAI+Anthropic），17项测试 | 1e0b370 |
+| 2026-05-29 | 1.3-1.5 | Provider/Agent分离、CRUD、连通性测试、编排接Provider | 458bc19 |
+| 2026-05-29 | 1.1 | Vite+Vue3 前端，组件化界面，第一层全部验收通过 | (本次) |
