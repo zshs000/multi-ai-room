@@ -33,16 +33,23 @@ export const api = {
   // 模板
   providerTemplates: () => fetch('/api/templates/providers').then(json),
   lineupTemplates: () => fetch('/api/templates/lineups').then(json),
+
+  // 会话
+  listSessions: () => fetch('/api/sessions').then(json),
+  getSession: (id) => fetch(`/api/sessions/${id}`).then(json),
+  deleteSession: (id) => fetch(`/api/sessions/${id}`, { method: 'DELETE' }).then(json),
+  renameSession: (id, title) =>
+    fetch(`/api/sessions/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title }) }).then(json),
 }
 
-// 发起讨论并逐事件回调。返回一个 { abort } 控制器。
-export function startDiscuss(topic, onEvent) {
+// 发起讨论并逐事件回调。opts 可含 { topic, sessionId, interject, mention }。返回 { abort } 控制器。
+export function startDiscuss(opts, onEvent) {
   const controller = new AbortController()
   ;(async () => {
     const resp = await fetch('/api/discuss', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ topic }),
+      body: JSON.stringify(opts),
       signal: controller.signal,
     })
     const reader = resp.body.getReader()

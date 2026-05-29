@@ -9,6 +9,11 @@ const tab = ref('agents') // 'agents' | 'providers' | 'settings'
 const providers = ref([])
 const agents = ref([])
 const rounds = ref(2)
+const orchestration = ref('round-robin')
+const moderatorProviderId = ref('')
+const moderatorModel = ref('')
+const maxTurns = ref(8)
+const summarize = ref(false)
 const provTemplates = ref([])
 const lineups = ref([])
 
@@ -17,12 +22,22 @@ async function reload() {
   providers.value = cfg.providers
   agents.value = cfg.agents
   rounds.value = cfg.rounds
+  orchestration.value = cfg.orchestration || 'round-robin'
+  moderatorProviderId.value = cfg.moderatorProviderId || (cfg.providers[0]?.id || '')
+  moderatorModel.value = cfg.moderatorModel || ''
+  maxTurns.value = cfg.maxTurns || 8
+  summarize.value = !!cfg.summarize
   emit('changed')
 }
 onMounted(async () => {
   await reload()
   provTemplates.value = await api.providerTemplates()
   lineups.value = await api.lineupTemplates()
+})
+
+const moderatorModels = computed(() => {
+  const p = providers.value.find((x) => x.id === moderatorProviderId.value)
+  return p?.models || []
 })
 
 // ---------- Provider 编辑 ----------
@@ -159,8 +174,15 @@ async function loadLineup(lineup) {
   await reload()
 }
 
-async function saveRounds() {
-  await api.updateSettings({ rounds: Number(rounds.value) || 1 })
+async function saveSettings() {
+  await api.updateSettings({
+    rounds: Number(rounds.value) || 1,
+    orchestration: orchestration.value,
+    moderatorProviderId: moderatorProviderId.value,
+    moderatorModel: moderatorModel.value,
+    maxTurns: Number(maxTurns.value) || 8,
+    summarize: summarize.value,
+  })
   await reload()
 }
 
@@ -312,10 +334,41 @@ function providerName(id) {
 
         <!-- ===== 通用设置 ===== -->
         <div v-if="tab === 'settings'" class="form">
-          <label>讨论轮数（每个 Agent 各发言几轮）</label>
+          <label>编排模式</label>
+          <select v-model="orchestration">
+            <option value="round-robin">🔄 固定轮流（每个 Agent 按顺序各发言 N 轮）</option>
+            <option value="moderator">🎤 主持人调度（由 AI 主持人决定谁发言、何时收尾）</option>
+          </select>
+
+          <template v-if="orchestration === 'round-robin'">
+            <label>讨论轮数（每个 Agent 各发言几轮）</label>
+            <input type="number" v-model="rounds" min="1" max="10" style="width: 120px" />
+          </template>
+
+          <template v-else>
+            <label>主持人使用的供应商</label>
+            <select v-model="moderatorProviderId">
+              <option v-for="p in providers" :key="p.id" :value="p.id">{{ p.name }} ({{ p.protocol }})</option>
+            </select>
+            <label>主持人模型（建议用便宜快速的）</label>
+            <select v-model="moderatorModel">
+              <option value="">（用该供应商首个模型）</option>
+              <option v-for="m in moderatorModels" :key="m" :value="m">{{ m }}</option>
+            </select>
+            <label>最大发言轮次（防止无限讨论）</label>
+            <input type="number" v-model="maxTurns" min="2" max="30" style="width: 120px" />
+          </template>
+
+          <label>讨论结束后自动总结</label>
           <div class="row">
-            <input type="number" v-model="rounds" min="1" max="10" style="width: 100px" />
-            <button class="primary" @click="saveRounds">保存</button>
+            <label class="switch">
+              <input type="checkbox" v-model="summarize" />
+              <span>开启总结（额外一次 LLM 调用，输出共识与结论）</span>
+            </label>
+          </div>
+
+          <div class="form-actions">
+            <button class="primary" @click="saveSettings">保存设置</button>
           </div>
         </div>
       </div>
@@ -386,4 +439,7 @@ function providerName(id) {
 .lineup-desc { font-size: 12px; color: var(--muted); margin: 4px 0 8px; }
 .lineup-agents { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip-sm { font-size: 11px; padding: 2px 8px; border: 1px solid; border-radius: 999px; }
+.switch { display: flex; align-items: center; gap: 8px; margin: 0; cursor: pointer; }
+.switch input { width: auto; }
+.switch span { font-size: 13px; color: var(--text); }
 </style>
