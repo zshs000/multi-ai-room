@@ -1,5 +1,5 @@
 // 配置存储：读写 config.json，负责旧结构迁移、id 生成、密钥脱敏、引用完整性。
-import { readFile, writeFile } from 'node:fs/promises'
+import { readFile, writeFile, rename } from 'node:fs/promises'
 
 const CONFIG_PATH = new URL('../config.json', import.meta.url)
 
@@ -12,17 +12,62 @@ function genId(prefix) {
 }
 
 // ---------- 读写底层 ----------
-async function readRaw() {
+// 解析失败时必须抛错，绝不静默返回 {}：config.json 含 API key 与全部 provider/agent，
+// 若把"损坏"当成"空配置"，会在下一次 saveConfig 时把残留的好数据彻底覆盖掉（无声丢 key）。
+// 只有"文件不存在"（首次启动）才是合法的空配置。
+export class ConfigCorruptError extends Error {}
+
+// 严格读取 JSON 文件：不存在/空 → {}；存在但损坏 → 抛 ConfigCorruptError（不静默吞）。
+// 抽成接受 path 的纯函数，便于测试用临时文件验证，不碰真实 config.json。
+export async function readJsonStrict(path) {
+  let raw
   try {
-    const raw = await readFile(CONFIG_PATH, 'utf8')
+    raw = await readFile(path, 'utf8')
+  } catch (e) {
+    if (e.code === 'ENOENT') return {} // 首次启动，无配置文件，正常
+    throw e
+  }
+  if (!raw.trim()) return {} // 空文件视为空配置
+  try {
     return JSON.parse(raw)
-  } catch {
-    return {}
+  } catch (e) {
+    throw new ConfigCorruptError(`配置文件解析失败，已停止以防覆盖丢失配置：${e.message}`)
   }
 }
 
+// 原子写 JSON：临时文件 + rename。进程中途被杀也不会留下半截文件污染原文件。
+// 自带按目标路径的写锁串行化：同一文件的并发写排队执行。
+// （Windows 上多个 rename 同时指向同一目标会抛 EPERM，串行化是必需而非可选。）
+let tmpCounter = 0
+const writeLocks = new Map()
+export async function atomicWriteJson(path, data) {
+  const key = path.href
+  const prev = writeLocks.get(key) || Promise.resolve()
+  const task = prev.catch(() => {}).then(async () => {
+    tmpCounter += 1
+    const suffix = `${Date.now().toString(36)}${tmpCounter}${Math.random().toString(36).slice(2, 6)}`
+    const tmpPath = new URL(`${path.pathname}.${suffix}.tmp`, path)
+    await writeFile(tmpPath, JSON.stringify(data, null, 2), 'utf8')
+    await rename(tmpPath, path)
+  })
+  writeLocks.set(key, task)
+  try {
+    await task
+  } finally {
+    if (writeLocks.get(key) === task) writeLocks.delete(key)
+  }
+}
+
+async function readRaw() {
+  return readJsonStrict(CONFIG_PATH)
+}
+
+// 配置写入串行化的写锁：上一次写的 Promise，新写排在它后面，防并发保存互相覆盖。
+let configWriteLock = Promise.resolve()
 async function writeRaw(config) {
-  await writeFile(CONFIG_PATH, JSON.stringify(config, null, 2), 'utf8')
+  const task = configWriteLock.catch(() => {}).then(() => atomicWriteJson(CONFIG_PATH, config))
+  configWriteLock = task
+  await task
 }
 
 // ---------- 旧结构迁移 ----------
