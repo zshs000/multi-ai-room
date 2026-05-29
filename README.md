@@ -38,6 +38,12 @@ npm start              # 终端 1：后端 (:3000)
 npm run dev:web        # 终端 2：前端 dev server (:5173)，API 自动代理到后端
 ```
 
+如果后端使用了自定义端口，例如 `PORT=4000 npm start`，前端开发代理也要同步：
+
+```bash
+VITE_API_PROXY_TARGET=http://localhost:4000 npm run dev:web
+```
+
 ## 测试
 
 ```bash
@@ -66,4 +72,3 @@ npm test               # 适配器 + 存储层单元测试
 
 - `docs/ROADMAP.md`：迭代路线图与进度（六层全部完成）。
 - `docs/API.md`：前后端接口契约。
-
