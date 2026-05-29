@@ -2,10 +2,12 @@ import { createServer } from 'node:http'
 import { readFile } from 'node:fs/promises'
 import { extname } from 'node:path'
 import { loadConfig, saveConfig, publicConfig, publicProvider, annotateAgent, genId } from './src/store.js'
-import { streamChat } from './src/llm.js'
 import { providerTemplates, lineupTemplates } from './src/templates.js'
 import { runRoundRobin, runModerated, runSummary, resolveRounds } from './src/orchestrator.js'
 import { createSession, getSession, saveSession, listSessions, deleteSession, renameSession, snapshotAgents, tryAcquireRun, releaseRun } from './src/sessions.js'
+import { readJsonBody, sendJson, sse } from './src/http.js'
+import { startHeartbeat } from './src/sse.js'
+import { testConnection } from './src/provider-service.js'
 import {
   DEFAULT_AGENT_COLOR,
   DEFAULT_MAX_TURNS,
@@ -19,59 +21,6 @@ import {
 
 const PORT = Number(process.env.PORT) || 3000
 const PUBLIC_DIR = new URL('./public/', import.meta.url)
-
-// ---------- 工具 ----------
-function readJsonBody(req) {
-  return new Promise((resolve, reject) => {
-    let raw = ''
-    req.on('data', (c) => (raw += c))
-    req.on('end', () => {
-      try { resolve(raw ? JSON.parse(raw) : {}) }
-      catch (e) { reject(e) }
-    })
-    req.on('error', reject)
-  })
-}
-function sendJson(res, status, obj) {
-  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' })
-  res.end(JSON.stringify(obj))
-}
-function sse(res, obj) {
-  res.write(`data: ${JSON.stringify(obj)}\n\n`)
-}
-
-// SSE 心跳：每 intervalMs 发一个 `: ping` 注释行（前端解析时被忽略），
-// 让中间代理/防火墙不会因长时间无数据而掐断连接（如等慢模型憋首字时）。
-// 返回 stop()，必须在连接结束的所有路径上调用，避免定时器泄漏或往已关闭连接写入。
-function startHeartbeat(res, intervalMs = Number(process.env.SSE_HEARTBEAT_MS) || 15000) {
-  const timer = setInterval(() => {
-    if (res.writableEnded) return
-    try { res.write(': ping\n\n') } catch {}
-  }, intervalMs)
-  timer.unref?.() // 不阻止进程退出
-  return () => clearInterval(timer)
-}
-
-// ---------- 连通性测试：发一条极简非流式请求探活 ----------
-async function testConnection({ protocol, baseUrl, apiKey, model }) {
-  const start = Date.now()
-  try {
-    let full = ''
-    await streamChat({
-      provider: { protocol, baseUrl, apiKey },
-      model,
-      systemPrompt: '',
-      messages: [{ role: 'user', content: '只回复"ok"两个字。' }],
-      onToken: (t) => { full += t },
-    })
-    return { ok: true, message: `连通正常，返回：${full.slice(0, 20)}`, latencyMs: Date.now() - start }
-  } catch (e) {
-    // 防止错误信息里意外回显完整 apiKey
-    let msg = e.message || '未知错误'
-    if (apiKey && apiKey.length > 8) msg = msg.split(apiKey).join('***')
-    return { ok: false, message: msg, latencyMs: Date.now() - start }
-  }
-}
 
 // ---------- 讨论编排 ----------
 async function runDiscussion(res, body, signal) {
