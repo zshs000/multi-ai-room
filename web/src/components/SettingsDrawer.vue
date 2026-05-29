@@ -10,6 +10,7 @@ const providers = ref([])
 const agents = ref([])
 const rounds = ref(2)
 const provTemplates = ref([])
+const lineups = ref([])
 
 async function reload() {
   const cfg = await api.getConfig()
@@ -21,6 +22,7 @@ async function reload() {
 onMounted(async () => {
   await reload()
   provTemplates.value = await api.providerTemplates()
+  lineups.value = await api.lineupTemplates()
 })
 
 // ---------- Provider 编辑 ----------
@@ -32,7 +34,7 @@ function editProvider(p) {
   editingProvider.value = { ...p, apiKey: '', modelsText: (p.models || []).join(', ') }
 }
 function applyTemplate(t) {
-  editingProvider.value = { name: t.name, protocol: t.protocol, baseUrl: t.baseUrl, apiKey: '', modelsText: (t.models || []).join(', ') }
+  editingProvider.value = { ...editingProvider.value, name: t.name, protocol: t.protocol, baseUrl: t.baseUrl, modelsText: (t.models || []).join(', ') }
 }
 async function saveProvider() {
   const e = editingProvider.value
@@ -41,10 +43,12 @@ async function saveProvider() {
     models: e.modelsText.split(',').map((s) => s.trim()).filter(Boolean),
   }
   if (e.apiKey) data.apiKey = e.apiKey // 空则不覆盖
-  if (e.id) await api.updateProvider(e.id, data)
-  else await api.createProvider(data)
+  let saved
+  if (e.id) saved = await api.updateProvider(e.id, data)
+  else saved = await api.createProvider(data)
   editingProvider.value = null
   await reload()
+  return saved
 }
 async function delProvider(p) {
   const r = await api.deleteProvider(p.id)
@@ -102,6 +106,59 @@ async function delAgent(a) {
   }
 }
 
+// ---------- Agent 内联新建供应商 ----------
+const inlineProvider = ref(null) // 在 Agent 表单内弹出的新建 provider 草稿
+function startInlineProvider() {
+  inlineProvider.value = { name: '', protocol: 'openai', baseUrl: '', apiKey: '', modelsText: '' }
+}
+function applyInlineTemplate(t) {
+  inlineProvider.value = { ...inlineProvider.value, name: t.name, protocol: t.protocol, baseUrl: t.baseUrl, modelsText: (t.models || []).join(', ') }
+}
+async function saveInlineProvider() {
+  const e = inlineProvider.value
+  const data = {
+    name: e.name, protocol: e.protocol, baseUrl: e.baseUrl,
+    models: e.modelsText.split(',').map((s) => s.trim()).filter(Boolean),
+  }
+  if (e.apiKey) data.apiKey = e.apiKey
+  const saved = await api.createProvider(data)
+  await reload()
+  // 自动回填到正在编辑的 agent
+  editingAgent.value.providerId = saved.id
+  editingAgent.value.model = saved.models?.[0] || ''
+  inlineProvider.value = null
+}
+
+// ---------- Agent 排序 ----------
+async function moveAgent(index, dir) {
+  const arr = agents.value
+  const j = index + dir
+  if (j < 0 || j >= arr.length) return
+  const order = arr.map((a) => a.id)
+  ;[order[index], order[j]] = [order[j], order[index]]
+  await api.reorderAgents(order)
+  await reload()
+}
+
+// ---------- 阵容模板载入 ----------
+const showLineups = ref(false)
+async function loadLineup(lineup) {
+  const firstProv = providers.value[0]
+  if (!firstProv) {
+    alert('请先添加至少一个供应商，再载入阵容。')
+    return
+  }
+  if (!confirm(`载入阵容「${lineup.name}」？将新增 ${lineup.agents.length} 个角色，统一使用供应商「${firstProv.name}」（可逐个改）。`)) return
+  for (const a of lineup.agents) {
+    await api.createAgent({
+      name: a.name, color: a.color, systemPrompt: a.systemPrompt,
+      providerId: firstProv.id, model: firstProv.models?.[0] || '',
+    })
+  }
+  showLineups.value = false
+  await reload()
+}
+
 async function saveRounds() {
   await api.updateSettings({ rounds: Number(rounds.value) || 1 })
   await reload()
@@ -128,7 +185,14 @@ function providerName(id) {
         <!-- ===== Agent 管理 ===== -->
         <div v-if="tab === 'agents'">
           <div v-if="!editingAgent">
-            <div v-for="a in agents" :key="a.id" class="card" :style="{ borderLeftColor: a.color }">
+            <div class="toolbar">
+              <button @click="showLineups = true">⚡ 载入阵容模板</button>
+            </div>
+            <div v-for="(a, idx) in agents" :key="a.id" class="card" :style="{ borderLeftColor: a.color }">
+              <div class="order-btns">
+                <button class="mini" :disabled="idx === 0" @click="moveAgent(idx, -1)">▲</button>
+                <button class="mini" :disabled="idx === agents.length - 1" @click="moveAgent(idx, 1)">▼</button>
+              </div>
               <div class="card-main">
                 <div class="card-title">
                   {{ a.name }}
@@ -157,9 +221,33 @@ function providerName(id) {
               <span v-for="c in colorPresets" :key="c" class="color-dot" :class="{ sel: editingAgent.color === c }" :style="{ background: c }" @click="editingAgent.color = c"></span>
             </div>
             <label>供应商</label>
-            <select v-model="editingAgent.providerId" @change="onAgentProviderChange">
-              <option v-for="p in providers" :key="p.id" :value="p.id">{{ p.name }} ({{ p.protocol }})</option>
-            </select>
+            <div class="row">
+              <select v-model="editingAgent.providerId" @change="onAgentProviderChange" style="flex:1">
+                <option v-for="p in providers" :key="p.id" :value="p.id">{{ p.name }} ({{ p.protocol }})</option>
+              </select>
+              <button @click="startInlineProvider" title="新建供应商">+</button>
+            </div>
+
+            <!-- 内联新建供应商 -->
+            <div v-if="inlineProvider" class="inline-box">
+              <div class="inline-title">新建供应商</div>
+              <div class="templates">
+                <button v-for="t in provTemplates" :key="t.name" class="tpl" @click="applyInlineTemplate(t)">{{ t.name }}</button>
+              </div>
+              <input v-model="inlineProvider.name" placeholder="名称" style="margin-top:8px" />
+              <select v-model="inlineProvider.protocol" style="margin-top:8px">
+                <option value="openai">OpenAI 兼容</option>
+                <option value="anthropic">Anthropic (Claude)</option>
+              </select>
+              <input v-model="inlineProvider.baseUrl" placeholder="https://api.deepseek.com" style="margin-top:8px" />
+              <input v-model="inlineProvider.apiKey" type="password" placeholder="API Key" style="margin-top:8px" />
+              <input v-model="inlineProvider.modelsText" placeholder="模型，逗号分隔" style="margin-top:8px" />
+              <div class="form-actions">
+                <button @click="inlineProvider = null">取消</button>
+                <button class="primary" @click="saveInlineProvider" :disabled="!inlineProvider.name">创建并选用</button>
+              </div>
+            </div>
+
             <label>模型</label>
             <select v-model="editingAgent.model">
               <option v-for="m in editingAgentModels" :key="m" :value="m">{{ m }}</option>
@@ -232,6 +320,23 @@ function providerName(id) {
         </div>
       </div>
     </div>
+
+    <!-- 阵容模板选择弹窗 -->
+    <div v-if="showLineups" class="lineup-modal" @click.self="showLineups = false">
+      <div class="lineup-box">
+        <div class="lineup-head">
+          <h3>选择阵容模板</h3>
+          <button class="ghost" @click="showLineups = false">✕</button>
+        </div>
+        <div v-for="l in lineups" :key="l.name" class="lineup-card" @click="loadLineup(l)">
+          <div class="lineup-name">{{ l.name }}</div>
+          <div class="lineup-desc">{{ l.description }}</div>
+          <div class="lineup-agents">
+            <span v-for="a in l.agents" :key="a.name" class="chip-sm" :style="{ borderColor: a.color }">{{ a.name }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -264,4 +369,21 @@ function providerName(id) {
 .test-result { font-size: 12px; margin-top: 8px; padding: 6px 10px; border-radius: 6px; background: #f0f0f3; }
 .test-result.ok { background: #e8f9ee; color: #1a8c3a; }
 .test-result.bad { background: #fff0f0; color: var(--danger); }
+
+.toolbar { margin-bottom: 12px; }
+.order-btns { display: flex; flex-direction: column; gap: 4px; justify-content: center; }
+.mini { padding: 2px 7px; font-size: 11px; line-height: 1; }
+.inline-box { background: #f0f4ff; border: 1px solid #d0e0ff; border-radius: 10px; padding: 12px; margin: 8px 0; }
+.inline-title { font-size: 13px; font-weight: 600; margin-bottom: 8px; color: #3a78f0; }
+
+.lineup-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 200; }
+.lineup-box { background: var(--panel); border-radius: var(--radius); padding: 20px; width: 440px; max-width: 90vw; max-height: 80vh; overflow-y: auto; }
+.lineup-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.lineup-head h3 { font-size: 16px; }
+.lineup-card { border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-bottom: 10px; cursor: pointer; transition: border-color 0.15s, background 0.15s; }
+.lineup-card:hover { border-color: var(--primary); background: #f7f9ff; }
+.lineup-name { font-weight: 600; font-size: 15px; }
+.lineup-desc { font-size: 12px; color: var(--muted); margin: 4px 0 8px; }
+.lineup-agents { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip-sm { font-size: 11px; padding: 2px 8px; border: 1px solid; border-radius: 999px; }
 </style>
