@@ -1,5 +1,5 @@
 // store.js 单元测试（不触网，不写真实 config.json）。运行：node test/store.test.js
-import { migrate, publicProvider, annotateAgent, maskKey } from '../src/store.js'
+import { migrate, publicProvider, publicConfig, annotateAgent, maskKey } from '../src/store.js'
 
 let pass = 0, fail = 0
 function eq(actual, expected, name) {
@@ -47,6 +47,23 @@ const providers = [{ id: 'p1', models: ['m1', 'm2'] }]
 eq(annotateAgent({ id: 'a1', providerId: 'p1', model: 'm1' }, providers).invalid, undefined, '正常agent无invalid')
 eq(annotateAgent({ id: 'a2', providerId: 'pX', model: 'm1' }, providers).invalid, 'provider_missing', '缺provider标记')
 eq(annotateAgent({ id: 'a3', providerId: 'p1', model: 'mZ' }, providers).invalid, 'model_missing', '缺model标记')
+
+// publicConfig 必须回吐全部设置字段（否则前端复选框/下拉保存后回弹默认值）
+const pc = publicConfig({
+  providers: [], agents: [], rounds: 3,
+  orchestration: 'moderator', moderatorProviderId: 'p1', moderatorModel: 'm1',
+  maxTurns: 12, summarize: true,
+})
+eq(pc.summarize, true, 'publicConfig 回吐 summarize')
+eq(pc.orchestration, 'moderator', 'publicConfig 回吐 orchestration')
+eq(pc.moderatorProviderId, 'p1', 'publicConfig 回吐 moderatorProviderId')
+eq(pc.moderatorModel, 'm1', 'publicConfig 回吐 moderatorModel')
+eq(pc.maxTurns, 12, 'publicConfig 回吐 maxTurns')
+// 缺省兜底
+const pcEmpty = publicConfig({ providers: [], agents: [], rounds: 2 })
+eq(pcEmpty.summarize, false, 'summarize 缺省为 false')
+eq(pcEmpty.orchestration, 'round-robin', 'orchestration 缺省为 round-robin')
+eq(pcEmpty.maxTurns, 8, 'maxTurns 缺省为 8')
 
 console.log(`\n结果: ${pass} 通过, ${fail} 失败`)
 process.exit(fail ? 1 : 0)

@@ -99,6 +99,11 @@ export function publicConfig(config) {
     providers: config.providers.map(publicProvider),
     agents: config.agents.map((a) => annotateAgent(a, config.providers)),
     rounds: config.rounds,
+    orchestration: config.orchestration || 'round-robin',
+    moderatorProviderId: config.moderatorProviderId || '',
+    moderatorModel: config.moderatorModel || '',
+    maxTurns: config.maxTurns || 8,
+    summarize: !!config.summarize,
   }
 }
 
