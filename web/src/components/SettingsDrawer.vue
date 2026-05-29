@@ -14,6 +14,8 @@ const moderatorProviderId = ref('')
 const moderatorModel = ref('')
 const maxTurns = ref(8)
 const summarize = ref(false)
+const savedTip = ref('') // '' | 'saving' | 'saved' | 'error'
+let savedTimer = null
 const provTemplates = ref([])
 const lineups = ref([])
 
@@ -175,15 +177,23 @@ async function loadLineup(lineup) {
 }
 
 async function saveSettings() {
-  await api.updateSettings({
-    rounds: Number(rounds.value) || 1,
-    orchestration: orchestration.value,
-    moderatorProviderId: moderatorProviderId.value,
-    moderatorModel: moderatorModel.value,
-    maxTurns: Number(maxTurns.value) || 8,
-    summarize: summarize.value,
-  })
-  await reload()
+  savedTip.value = 'saving'
+  if (savedTimer) clearTimeout(savedTimer)
+  try {
+    await api.updateSettings({
+      rounds: Number(rounds.value) || 1,
+      orchestration: orchestration.value,
+      moderatorProviderId: moderatorProviderId.value,
+      moderatorModel: moderatorModel.value,
+      maxTurns: Number(maxTurns.value) || 8,
+      summarize: summarize.value,
+    })
+    await reload()
+    savedTip.value = 'saved'
+  } catch (e) {
+    savedTip.value = 'error'
+  }
+  savedTimer = setTimeout(() => { savedTip.value = '' }, 2500)
 }
 
 function providerName(id) {
@@ -369,7 +379,11 @@ function providerName(id) {
           </div>
 
           <div class="form-actions">
-            <button class="primary" @click="saveSettings">保存设置</button>
+            <button class="primary" @click="saveSettings" :disabled="savedTip === 'saving'">
+              {{ savedTip === 'saving' ? '保存中…' : '保存设置' }}
+            </button>
+            <span v-if="savedTip === 'saved'" class="save-tip ok">✓ 已保存</span>
+            <span v-else-if="savedTip === 'error'" class="save-tip err">✕ 保存失败，请重试</span>
           </div>
         </div>
       </div>
@@ -414,7 +428,10 @@ function providerName(id) {
 .badge-warn { font-size: 11px; background: var(--danger-bg); color: var(--danger); padding: 2px 8px; border-radius: 999px; }
 
 .block { width: 100%; padding: 12px; margin-top: 6px; }
-.form-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+.form-actions { display: flex; gap: 10px; justify-content: flex-end; align-items: center; margin-top: 20px; }
+.save-tip { font-size: 13px; }
+.save-tip.ok { color: var(--ok, #34a853); }
+.save-tip.err { color: var(--danger, #d93025); }
 .colors { display: flex; gap: 10px; }
 .color-dot { width: 26px; height: 26px; border-radius: 50%; cursor: pointer; border: 3px solid transparent; }
 .color-dot.sel { border-color: #00000030; transform: scale(1.1); }
