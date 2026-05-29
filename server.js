@@ -7,7 +7,7 @@ import { providerTemplates, lineupTemplates } from './src/templates.js'
 import { runRoundRobin, runModerated, runSummary, resolveRounds } from './src/orchestrator.js'
 import { createSession, getSession, saveSession, listSessions, deleteSession, renameSession, snapshotAgents, tryAcquireRun, releaseRun } from './src/sessions.js'
 
-const PORT = 3000
+const PORT = Number(process.env.PORT) || 3000
 const PUBLIC_DIR = new URL('./public/', import.meta.url)
 
 // ---------- 工具 ----------
@@ -28,6 +28,18 @@ function sendJson(res, status, obj) {
 }
 function sse(res, obj) {
   res.write(`data: ${JSON.stringify(obj)}\n\n`)
+}
+
+// SSE 心跳：每 intervalMs 发一个 `: ping` 注释行（前端解析时被忽略），
+// 让中间代理/防火墙不会因长时间无数据而掐断连接（如等慢模型憋首字时）。
+// 返回 stop()，必须在连接结束的所有路径上调用，避免定时器泄漏或往已关闭连接写入。
+function startHeartbeat(res, intervalMs = Number(process.env.SSE_HEARTBEAT_MS) || 15000) {
+  const timer = setInterval(() => {
+    if (res.writableEnded) return
+    try { res.write(': ping\n\n') } catch {}
+  }, intervalMs)
+  timer.unref?.() // 不阻止进程退出
+  return () => clearInterval(timer)
 }
 
 // ---------- 连通性测试：发一条极简非流式请求探活 ----------
@@ -395,8 +407,13 @@ const server = createServer(async (req, res) => {
         Connection: 'keep-alive',
       })
       const ac = new AbortController()
-      req.on('close', () => ac.abort()) // 前端断开即中断 LLM 请求
-      return runDiscussion(res, body, ac.signal)
+      const stopHeartbeat = startHeartbeat(res)
+      req.on('close', () => { ac.abort(); stopHeartbeat() }) // 前端断开：中断 LLM + 停心跳
+      try {
+        return await runDiscussion(res, body, ac.signal)
+      } finally {
+        stopHeartbeat() // 正常结束 / 抛错都停心跳，防定时器泄漏
+      }
     }
 
     // 其它走静态
