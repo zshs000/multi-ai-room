@@ -1,6 +1,13 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
 import { api } from '../api.js'
+import {
+  AGENT_COLOR_PRESETS,
+  DEFAULT_MAX_TURNS,
+  DEFAULT_ORCHESTRATION,
+  MODERATOR_ORCHESTRATION,
+  TOAST_DURATION_MS,
+} from '../constants.js'
 
 const props = defineProps({ config: Object })
 const emit = defineEmits(['close', 'changed'])
@@ -9,10 +16,10 @@ const tab = ref('agents') // 'agents' | 'providers' | 'settings'
 const providers = ref([])
 const agents = ref([])
 const rounds = ref(2)
-const orchestration = ref('round-robin')
+const orchestration = ref(DEFAULT_ORCHESTRATION)
 const moderatorProviderId = ref('')
 const moderatorModel = ref('')
-const maxTurns = ref(8)
+const maxTurns = ref(DEFAULT_MAX_TURNS)
 const summarize = ref(false)
 const savedTip = ref('') // '' | 'saving' | 'saved' | 'error'
 let savedTimer = null
@@ -24,10 +31,10 @@ async function reload() {
   providers.value = cfg.providers
   agents.value = cfg.agents
   rounds.value = cfg.rounds
-  orchestration.value = cfg.orchestration || 'round-robin'
+  orchestration.value = cfg.orchestration || DEFAULT_ORCHESTRATION
   moderatorProviderId.value = cfg.moderatorProviderId || (cfg.providers[0]?.id || '')
   moderatorModel.value = cfg.moderatorModel || ''
-  maxTurns.value = cfg.maxTurns || 8
+  maxTurns.value = cfg.maxTurns || DEFAULT_MAX_TURNS
   summarize.value = !!cfg.summarize
   emit('changed')
 }
@@ -89,11 +96,10 @@ async function testProvider(p) {
 
 // ---------- Agent 编辑 ----------
 const editingAgent = ref(null)
-const colorPresets = ['#4f8cff', '#34c759', '#ff9f0a', '#ff3b30', '#5856d6', '#af52de', '#00c7be']
 function newAgent() {
   const firstProv = providers.value[0]
   editingAgent.value = {
-    name: '', color: colorPresets[agents.value.length % colorPresets.length],
+    name: '', color: AGENT_COLOR_PRESETS[agents.value.length % AGENT_COLOR_PRESETS.length],
     systemPrompt: '', providerId: firstProv?.id || '', model: firstProv?.models?.[0] || '',
   }
 }
@@ -185,7 +191,7 @@ async function saveSettings() {
       orchestration: orchestration.value,
       moderatorProviderId: moderatorProviderId.value,
       moderatorModel: moderatorModel.value,
-      maxTurns: Number(maxTurns.value) || 8,
+      maxTurns: Number(maxTurns.value) || DEFAULT_MAX_TURNS,
       summarize: summarize.value,
     })
     await reload()
@@ -193,7 +199,7 @@ async function saveSettings() {
   } catch (e) {
     savedTip.value = 'error'
   }
-  savedTimer = setTimeout(() => { savedTip.value = '' }, 1500)
+  savedTimer = setTimeout(() => { savedTip.value = '' }, TOAST_DURATION_MS)
 }
 
 function providerName(id) {
@@ -258,7 +264,7 @@ function providerName(id) {
             <input v-model="editingAgent.name" placeholder="如：产品经理" />
             <label>颜色</label>
             <div class="colors">
-              <span v-for="c in colorPresets" :key="c" class="color-dot" :class="{ sel: editingAgent.color === c }" :style="{ background: c }" @click="editingAgent.color = c"></span>
+              <span v-for="c in AGENT_COLOR_PRESETS" :key="c" class="color-dot" :class="{ sel: editingAgent.color === c }" :style="{ background: c }" @click="editingAgent.color = c"></span>
             </div>
             <label>供应商</label>
             <div class="row">
@@ -354,11 +360,11 @@ function providerName(id) {
         <div v-if="tab === 'settings'" class="form">
           <label>编排模式</label>
           <select v-model="orchestration">
-            <option value="round-robin">🔄 固定轮流（每个 Agent 按顺序各发言 N 轮）</option>
-            <option value="moderator">🎤 主持人调度（由 AI 主持人决定谁发言、何时收尾）</option>
+            <option :value="DEFAULT_ORCHESTRATION">🔄 固定轮流（每个 Agent 按顺序各发言 N 轮）</option>
+            <option :value="MODERATOR_ORCHESTRATION">🎤 主持人调度（由 AI 主持人决定谁发言、何时收尾）</option>
           </select>
 
-          <template v-if="orchestration === 'round-robin'">
+          <template v-if="orchestration === DEFAULT_ORCHESTRATION">
             <label>讨论轮数（每个 Agent 各发言几轮）</label>
             <input type="number" v-model="rounds" min="1" max="10" style="width: 120px" />
           </template>

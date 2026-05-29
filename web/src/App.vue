@@ -3,12 +3,21 @@ import { ref, onMounted, nextTick, computed } from 'vue'
 import { api, startDiscuss } from './api.js'
 import { renderMarkdown } from './markdown.js'
 import SettingsDrawer from './components/SettingsDrawer.vue'
+import {
+  AUTO_SCROLL_THRESHOLD_PX,
+  DEFAULT_ORCHESTRATION,
+  DEFAULT_ROUNDS,
+  EXPORT_FILENAME_TOPIC_LENGTH,
+  SESSION_TITLE_MAX_LENGTH,
+  SUMMARY_AGENT_ID,
+  TOAST_DURATION_MS,
+} from './constants.js'
 
 const messages = ref([]) // {kind:'system'|'agent'|'error'|'user'|'moderator', ...}
 const topic = ref('')
 const running = ref(false)
 const showSettings = ref(false)
-const config = ref({ providers: [], agents: [], rounds: 2, orchestration: 'round-robin' })
+const config = ref({ providers: [], agents: [], rounds: DEFAULT_ROUNDS, orchestration: DEFAULT_ORCHESTRATION })
 const chatEl = ref(null)
 const theme = ref(localStorage.getItem('theme') || 'light')
 const autoScroll = ref(true)
@@ -20,7 +29,7 @@ let toastTimer = null
 function showToast(text) {
   toast.value = text
   if (toastTimer) clearTimeout(toastTimer)
-  toastTimer = setTimeout(() => { toast.value = '' }, 1500)
+  toastTimer = setTimeout(() => { toast.value = '' }, TOAST_DURATION_MS)
 }
 let controller = null
 let lastTopic = ''
@@ -51,7 +60,7 @@ function toggleTheme() {
 function onScroll() {
   const el = chatEl.value
   if (!el) return
-  autoScroll.value = el.scrollHeight - el.scrollTop - el.clientHeight < 60
+  autoScroll.value = el.scrollHeight - el.scrollTop - el.clientHeight < AUTO_SCROLL_THRESHOLD_PX
 }
 function scrollToBottom() {
   if (!autoScroll.value) return
@@ -76,7 +85,7 @@ function handleEvent(evt, ctx) {
     messages.value.push({ kind: 'user', text: evt.content })
     scrollToBottom()
   } else if (evt.type === 'agent_start') {
-    ctx.current = { kind: 'agent', agentId: evt.agentId, name: evt.name, color: evt.color, model: evt.model, providerName: evt.providerName, round: evt.round, text: '', isSummary: evt.agentId === '__summary__' }
+    ctx.current = { kind: 'agent', agentId: evt.agentId, name: evt.name, color: evt.color, model: evt.model, providerName: evt.providerName, round: evt.round, text: '', isSummary: evt.agentId === SUMMARY_AGENT_ID }
     messages.value.push(ctx.current)
     scrollToBottom()
   } else if (evt.type === 'token') {
@@ -150,7 +159,7 @@ async function loadSession(id) {
   messages.value = [{ kind: 'system', text: `话题：${s.topic}` }]
   for (const m of s.messages) {
     if (m.type === 'user') messages.value.push({ kind: 'user', text: m.content })
-    else messages.value.push({ kind: 'agent', agentId: m.agentId, name: m.name, color: m.color, model: m.model, round: m.round, text: m.content, isSummary: m.agentId === '__summary__' })
+    else messages.value.push({ kind: 'agent', agentId: m.agentId, name: m.name, color: m.color, model: m.model, round: m.round, text: m.content, isSummary: m.agentId === SUMMARY_AGENT_ID })
   }
   autoScroll.value = true
   scrollToBottom()
@@ -208,7 +217,7 @@ function exportMarkdown() {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `讨论_${(lastTopic || 'export').slice(0, 20)}.md`
+  a.download = `讨论_${(lastTopic || 'export').slice(0, EXPORT_FILENAME_TOPIC_LENGTH)}.md`
   a.click()
   URL.revokeObjectURL(url)
 }
@@ -333,7 +342,7 @@ async function onSettingsClose() {
           ref="renameInputEl"
           v-model="renameInput"
           class="rename-input"
-          maxlength="60"
+          :maxlength="SESSION_TITLE_MAX_LENGTH"
           placeholder="输入新的会话名称"
           @keydown.enter="confirmRename"
           @keydown.esc="cancelRename"
