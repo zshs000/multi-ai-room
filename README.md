@@ -64,6 +64,6 @@ npm test               # 适配器 + 存储层单元测试
 
 ## 文档
 
-- `docs/ROADMAP.md`：迭代路线图与进度（五层全部完成）。
+- `docs/ROADMAP.md`：迭代路线图与进度（六层全部完成）。
 - `docs/API.md`：前后端接口契约。
 
