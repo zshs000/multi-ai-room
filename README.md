@@ -1,6 +1,18 @@
 # 多 AI 讨论室
 
-多个 AI Agent 各扮角色、接入不同厂商模型（OpenAI 兼容 / Anthropic Claude），就一个话题同台轮流讨论。
+让多个 AI 智能体各扮角色、**接入不同厂商的不同模型**，就一个话题同台讨论、辩论。
+不是一个模型分饰多角，而是 DeepSeek、通义、Claude、小米 MiMo 等**异构大脑真正同台**，观点天然有差异。
+
+## 功能特性
+
+- **多模型同台**：每个角色可绑定不同供应商/模型；支持 OpenAI 兼容格式（DeepSeek/通义/Kimi/智谱/小米等）与 Anthropic Claude 原生格式。
+- **两种编排**：
+  - 🔄 **固定轮流**——每个角色按顺序各发言 N 轮。
+  - 🎤 **主持人调度**——由一个 AI 主持人决定下一个谁发言、给什么引导、何时收尾，破解"多轮重复立场"。
+- **可视化管理**：界面增删改角色（人设/颜色）、供应商（含预置模板一键填充、连通性测试）、阵容模板（辩论赛/头脑风暴等一键载入）。
+- **参与讨论**：讨论后可追问、@指定角色单独回应。
+- **会话留存**：多会话持久化、刷新不丢、可续聊、重命名、导出为 Markdown。
+- **体验**：Markdown 渲染 + 代码高亮、流式打字、可随时停止、深色模式、响应式。
 
 ## 快速开始
 
@@ -8,19 +20,22 @@
 # 1. 安装并构建前端（生成 public/ 下的页面）
 npm run build
 
-# 2. 配置 API Key
-cp config.example.json config.json   # 然后编辑 config.json，或启动后在界面「设置」里填
+# 2. 配置：复制示例，或直接启动后在界面「设置」里填
+cp config.example.json config.json
 
 # 3. 启动
 npm start
-# 打开 http://localhost:3000
+# 打开 http://localhost:3000，点右上角「设置」配好供应商 API Key 即可开聊
 ```
+
+> 首次使用：到「设置 → 供应商」用模板填好 baseUrl 和你的 API Key（可点「测试」验证），
+> 再到「角色」给每个角色选供应商和模型，然后输入话题开始讨论。
 
 ## 开发模式（前端热更新）
 
 ```bash
-npm start              # 终端 1：后端
-npm run dev:web        # 终端 2：前端 dev server，打开 http://localhost:5173
+npm start              # 终端 1：后端 (:3000)
+npm run dev:web        # 终端 2：前端 dev server (:5173)，API 自动代理到后端
 ```
 
 ## 测试
@@ -31,14 +46,24 @@ npm test               # 适配器 + 存储层单元测试
 
 ## 架构
 
-- **后端** `server.js` + `src/`：Node 原生 http，REST + SSE 流式讨论。
+- **后端** `server.js` + `src/`：Node 原生 http（零运行时依赖），REST + SSE 流式讨论。
   - `src/adapters.js`：协议适配器注册表（openai / anthropic），加新协议只需一个实现 + 注册一行。
+  - `src/llm.js`：统一流式调用，屏蔽协议差异，带空闲超时与中断。
+  - `src/orchestrator.js`：编排逻辑（固定轮流 / 主持人调度 / 总结）。
   - `src/store.js`：配置存储、旧结构迁移、密钥脱敏、引用完整性。
+  - `src/sessions.js`：会话持久化（原子写 + 并发锁），绑定角色配置快照。
   - `src/templates.js`：供应商与阵容预置模板。
 - **前端** `web/`：Vite + Vue 3，构建产物输出到 `public/`。
-- **配置** `config.json`：含密钥，已 gitignore；结构见 `docs/API.md`。
+- **配置** `config.json`：含密钥，已 gitignore；`sessions/` 存讨论记录，也已 gitignore。
+
+## 安全说明
+
+- 服务仅监听 `127.0.0.1`，不对局域网开放。
+- API Key 仅存本地、永不入库、永不明文下发前端（界面显示脱敏掩码）。
+- 这是单机自用工具，无鉴权；请勿将端口暴露到公网。
 
 ## 文档
 
-- `docs/ROADMAP.md`：迭代路线图与进度。
+- `docs/ROADMAP.md`：迭代路线图与进度（五层全部完成）。
 - `docs/API.md`：前后端接口契约。
+
