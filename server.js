@@ -84,6 +84,7 @@ async function runDiscussion(res, body, signal) {
   }
 
   // 新建会话：用当前 agent 配置做快照
+  let createdNew = false
   if (!session) {
     session = await createSession({
       topic,
@@ -91,6 +92,7 @@ async function runDiscussion(res, body, signal) {
       rounds: config.rounds,
       orchestration: config.orchestration || 'round-robin',
     })
+    createdNew = true
     tryAcquireRun(session.id) // 新会话 id 唯一，必定成功
   }
 
@@ -165,6 +167,12 @@ async function runDiscussion(res, body, signal) {
     if (!signal.aborted) emit({ type: 'error', message: e.message })
   } finally {
     releaseRun(session.id)
+  }
+
+  // 全新会话若一条发言都没产出（如所有 provider 配错），删掉空壳，
+  // 不在侧栏留下"0 条"的幽灵记录。用户已通过 error 事件看到失败原因。
+  if (createdNew && session.messages.length === 0) {
+    await deleteSession(session.id)
   }
 
   emit({ type: 'done', sessionId: session.id })
