@@ -193,7 +193,7 @@ async function saveSettings() {
   } catch (e) {
     savedTip.value = 'error'
   }
-  savedTimer = setTimeout(() => { savedTip.value = '' }, 2500)
+  savedTimer = setTimeout(() => { savedTip.value = '' }, 1500)
 }
 
 function providerName(id) {
@@ -203,6 +203,13 @@ function providerName(id) {
 
 <template>
   <div class="overlay" @click.self="emit('close')">
+    <!-- 居中保存提示 -->
+    <transition name="toast">
+      <div v-if="savedTip === 'saved' || savedTip === 'error'" class="save-toast" :class="savedTip">
+        <span class="toast-icon">{{ savedTip === 'saved' ? '✓' : '✕' }}</span>
+        <span>{{ savedTip === 'saved' ? '已保存' : '保存失败，请重试' }}</span>
+      </div>
+    </transition>
     <div class="drawer">
       <div class="drawer-head">
         <div class="tabs">
@@ -382,8 +389,6 @@ function providerName(id) {
             <button class="primary" @click="saveSettings" :disabled="savedTip === 'saving'">
               {{ savedTip === 'saving' ? '保存中…' : '保存设置' }}
             </button>
-            <span v-if="savedTip === 'saved'" class="save-tip ok">✓ 已保存</span>
-            <span v-else-if="savedTip === 'error'" class="save-tip err">✕ 保存失败，请重试</span>
           </div>
         </div>
       </div>
@@ -429,9 +434,18 @@ function providerName(id) {
 
 .block { width: 100%; padding: 12px; margin-top: 6px; }
 .form-actions { display: flex; gap: 10px; justify-content: flex-end; align-items: center; margin-top: 20px; }
-.save-tip { font-size: 13px; }
-.save-tip.ok { color: var(--ok, #34a853); }
-.save-tip.err { color: var(--danger, #d93025); }
+
+/* 居中偏上的保存提示 toast（与主界面 app-toast 统一）*/
+.save-toast {
+  position: fixed; top: 10%; left: 50%; transform: translate(-50%, -50%);
+  z-index: 200; display: flex; align-items: center; gap: 7px;
+  padding: 9px 18px; border-radius: 9px; font-size: 13px; font-weight: 500;
+  color: #fff; background: #323233; box-shadow: 0 6px 20px rgba(0,0,0,0.18);
+  pointer-events: none;
+}
+.save-toast .toast-icon { font-size: 14px; }
+.toast-enter-active, .toast-leave-active { transition: opacity 0.25s, transform 0.25s; }
+.toast-enter-from, .toast-leave-to { opacity: 0; transform: translate(-50%, -50%) scale(0.85); }
 .colors { display: flex; gap: 10px; }
 .color-dot { width: 26px; height: 26px; border-radius: 50%; cursor: pointer; border: 3px solid transparent; }
 .color-dot.sel { border-color: #00000030; transform: scale(1.1); }

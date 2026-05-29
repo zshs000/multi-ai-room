@@ -15,6 +15,13 @@ const autoScroll = ref(true)
 const sessions = ref([])
 const currentSessionId = ref(null)
 const showSidebar = ref(true)
+const toast = ref('') // 居中偏上的轻提示文字，空=不显示
+let toastTimer = null
+function showToast(text) {
+  toast.value = text
+  if (toastTimer) clearTimeout(toastTimer)
+  toastTimer = setTimeout(() => { toast.value = '' }, 1500)
+}
 let controller = null
 let lastTopic = ''
 
@@ -150,6 +157,11 @@ async function loadSession(id) {
 }
 function newChat() {
   if (running.value) return
+  // 已经是空白新讨论（无会话、无消息）：提示用户，不重复清空
+  if (!currentSessionId.value && messages.value.length === 0) {
+    showToast('已经是最新讨论了')
+    return
+  }
   currentSessionId.value = null
   messages.value = []
   lastTopic = ''
@@ -208,6 +220,10 @@ async function onSettingsClose() {
 
 <template>
   <div class="layout" :class="{ 'sidebar-hidden': !showSidebar }">
+    <!-- 居中偏上的轻提示 -->
+    <transition name="toast">
+      <div v-if="toast" class="app-toast">{{ toast }}</div>
+    </transition>
     <!-- 会话侧栏 -->
     <aside class="sidebar">
       <div class="sidebar-head">
@@ -301,6 +317,16 @@ async function onSettingsClose() {
 
 <style scoped>
 .layout { height: 100%; display: flex; }
+
+/* 居中偏上的轻提示 toast */
+.app-toast {
+  position: fixed; top: 10%; left: 50%; transform: translate(-50%, -50%);
+  z-index: 200; padding: 9px 18px; border-radius: 9px;
+  font-size: 13px; font-weight: 500; color: #fff; background: #323233;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.18); pointer-events: none;
+}
+.toast-enter-active, .toast-leave-active { transition: opacity 0.25s, transform 0.25s; }
+.toast-enter-from, .toast-leave-to { opacity: 0; transform: translate(-50%, -50%) scale(0.85); }
 
 /* 侧栏 */
 .sidebar { width: 240px; flex-shrink: 0; background: var(--panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; transition: margin-left 0.2s; }
