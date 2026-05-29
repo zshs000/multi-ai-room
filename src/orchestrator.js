@@ -163,4 +163,20 @@ async function runSummary({ summarizer, topic, history, emit, signal }) {
   return reply
 }
 
-export { buildMessages, resolveProvider, speak, runRoundRobin, runModerated, runSummary, moderatorDecide, parseModeratorDecision }
+// ---------- 轮数 / 上限决策（纯函数，便于测试）----------
+// 统一决定一次讨论该跑多少：
+// - round-robin 返回 { rounds }：每个 agent 依次发言的轮数
+// - moderator   返回 { maxTurns }：主持人模式允许的最大发言次数
+// 续聊（isContinuation）时两种模式都收敛到"约一轮"，不重开整场，
+// 避免主持人模式续聊跑满 maxTurns 造成额外 API 消耗与不可控体验。
+function resolveRounds({ mode, isContinuation, agentCount, rounds, maxTurns }) {
+  const r = rounds || 1
+  if (mode === 'moderator') {
+    if (isContinuation) return { maxTurns: agentCount } // 约一轮：每人一次的量级
+    return { maxTurns: maxTurns || (agentCount * (rounds || 2)) }
+  }
+  // round-robin
+  return { rounds: isContinuation ? 1 : r }
+}
+
+export { buildMessages, resolveProvider, speak, runRoundRobin, runModerated, runSummary, moderatorDecide, parseModeratorDecision, resolveRounds }

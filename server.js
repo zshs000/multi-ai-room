@@ -4,7 +4,7 @@ import { extname } from 'node:path'
 import { loadConfig, saveConfig, publicConfig, publicProvider, annotateAgent, genId } from './src/store.js'
 import { streamChat } from './src/llm.js'
 import { providerTemplates, lineupTemplates } from './src/templates.js'
-import { runRoundRobin, runModerated, runSummary } from './src/orchestrator.js'
+import { runRoundRobin, runModerated, runSummary, resolveRounds } from './src/orchestrator.js'
 import { createSession, getSession, saveSession, listSessions, deleteSession, renameSession, snapshotAgents, tryAcquireRun, releaseRun } from './src/sessions.js'
 
 const PORT = 3000
@@ -51,7 +51,6 @@ async function testConnection({ protocol, baseUrl, apiKey, model }) {
   }
 }
 
-// ---------- 讨论编排 ----------
 // ---------- 讨论编排 ----------
 async function runDiscussion(res, body, signal) {
   const config = await loadConfig()
@@ -123,9 +122,9 @@ async function runDiscussion(res, body, signal) {
     await saveSession(session)
   }
 
-  // 续聊（已有历史）时，每个 agent 只接话 1 轮，避免重跑整轮 N 次；新讨论用配置轮数。
+  // 续聊（已有历史）时收敛轮数，避免重跑整场；轮数决策见 orchestrator.resolveRounds。
   const isContinuation = messagesBefore > 0 && (body.sessionId || body.interject)
-  const effectiveRounds = isContinuation ? 1 : (config.rounds || 1)
+  const mode = (session.orchestration || config.orchestration) === 'moderator' ? 'moderator' : 'round-robin'
 
   try {
     // @指定 agent：只让该 agent 回应一次
@@ -136,19 +135,23 @@ async function runDiscussion(res, body, signal) {
       } else {
         emit({ type: 'error', message: '你 @ 的角色已不存在（可能已被删除）。' })
       }
-    } else if ((session.orchestration || config.orchestration) === 'moderator') {
+    } else if (mode === 'moderator') {
       // 主持人模式
       const modProvider = providers.find((p) => p.id === config.moderatorProviderId) || providers[0]
       const modModel = config.moderatorModel || modProvider?.models?.[0] || ''
+      const { maxTurns } = resolveRounds({
+        mode, isContinuation, agentCount: agents.length, rounds: config.rounds, maxTurns: config.maxTurns,
+      })
       await runModerated({
         agents, providers, topic, history,
-        maxTurns: config.maxTurns || (agents.length * (config.rounds || 2)),
+        maxTurns,
         moderator: { provider: modProvider, model: modModel },
         emit, signal, onTurn,
       })
     } else {
       // 固定轮流
-      await runRoundRobin({ agents, providers, topic, history, rounds: effectiveRounds, emit, signal, onTurn })
+      const { rounds } = resolveRounds({ mode, isContinuation, agentCount: agents.length, rounds: config.rounds })
+      await runRoundRobin({ agents, providers, topic, history, rounds, emit, signal, onTurn })
     }
 
     // 总结：仅当本次真有新发言产出、开启总结、未中断时

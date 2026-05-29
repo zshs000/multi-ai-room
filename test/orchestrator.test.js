@@ -1,6 +1,6 @@
 // orchestrator.js 单元测试（纯函数，不触网）。运行：node test/orchestrator.test.js
 // 重点覆盖"可见性模型"的核心——buildMessages 的角色映射，以及 provider 解析与主持人 JSON 解析的容错。
-import { buildMessages, resolveProvider, parseModeratorDecision } from '../src/orchestrator.js'
+import { buildMessages, resolveProvider, parseModeratorDecision, resolveRounds } from '../src/orchestrator.js'
 
 let pass = 0, fail = 0
 function eq(actual, expected, name) {
@@ -63,6 +63,16 @@ eq(parseModeratorDecision('我觉得应该继续讨论'), null, '无 JSON 返回
 eq(parseModeratorDecision('{坏掉的 json'), null, '半截/非法 JSON 返回 null')
 eq(parseModeratorDecision(''), null, '空字符串返回 null')
 eq(parseModeratorDecision(undefined), null, 'undefined 返回 null')
+
+// ---------- resolveRounds：续聊收敛轮数（修复 #1）----------
+// round-robin：新讨论用配置轮数，续聊只 1 轮
+eq(resolveRounds({ mode: 'round-robin', isContinuation: false, agentCount: 3, rounds: 3 }), { rounds: 3 }, 'round-robin 新讨论用配置轮数')
+eq(resolveRounds({ mode: 'round-robin', isContinuation: true, agentCount: 3, rounds: 3 }), { rounds: 1 }, 'round-robin 续聊收敛到 1 轮')
+// moderator：新讨论用 maxTurns（或默认 agentCount*rounds），续聊收敛到约一轮(=agentCount)
+eq(resolveRounds({ mode: 'moderator', isContinuation: false, agentCount: 3, rounds: 2, maxTurns: 8 }), { maxTurns: 8 }, 'moderator 新讨论用配置 maxTurns')
+eq(resolveRounds({ mode: 'moderator', isContinuation: false, agentCount: 3, rounds: 2 }), { maxTurns: 6 }, 'moderator 无 maxTurns 时默认 agentCount*rounds')
+eq(resolveRounds({ mode: 'moderator', isContinuation: true, agentCount: 3, rounds: 2, maxTurns: 8 }), { maxTurns: 3 }, '★moderator 续聊收敛到 agentCount(不再跑满 maxTurns=8)')
+eq(resolveRounds({ mode: 'moderator', isContinuation: true, agentCount: 5, rounds: 3, maxTurns: 30 }), { maxTurns: 5 }, '★moderator 续聊不受大 maxTurns 影响')
 
 console.log(`\n结果: ${pass} 通过, ${fail} 失败`)
 process.exit(fail ? 1 : 0)
