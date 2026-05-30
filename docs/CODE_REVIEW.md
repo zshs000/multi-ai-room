@@ -4,7 +4,7 @@
 
 ## 结论
 
-项目核心功能已经可用，近期提交也修掉了几个会影响真实使用的风险点。但从规范和可维护性看，当前仍有四类主要问题：
+项目核心功能已经可用，近期提交也修掉了几个会影响真实使用的风险点。初始审查发现四类主要规范问题：
 
 1. 会话文件 IO 仍会吞掉损坏 JSON，与已修复的 config 安全策略不一致。
 2. `server.js`、`web/src/App.vue`、`web/src/components/SettingsDrawer.vue` 文件过大，职责边界不清。
@@ -32,7 +32,24 @@
 
 本文件已合并这些反馈，并将会话 IO 调整为第一修复顺序。
 
-## 待修复问题
+## 本轮修复进展
+
+| 问题 | 修复提交 | 验证 |
+| --- | --- | --- |
+| 会话损坏 JSON 静默吞掉、会话写锁失败路径不清理 | `a4e3da8` `fix(#5): 损坏会话不再静默消失` | `node test/sessions.test.js`、`npm test`、`npm run build` |
+| CI 与根构建脚本绕过锁文件 | `fbe2cd5` `ci(#6): 使用 npm ci 固定前端依赖安装` | `npm test`、`npm run build` |
+| 后端默认值、特殊 ID、颜色常量分散 | `702f131` `refactor(#7): 后端默认值和特殊标识集中到常量` | `npm test`、`npm run build` |
+| Vite 开发代理端口硬编码 | `6bb4619` `fix(#8): Vite 开发代理支持自定义后端端口` | `npm test`、`npm run build` |
+| 服务端入口混合 HTTP/SSE/provider 探活/讨论编排/API 路由 | `18c839a`、`a5c37a9`、`a325d0e` | `server.js` 降到约 41 行；`npm test`、`npm run build` |
+| 前端显示常量分散 | `72ae788` `refactor(#10): 前端显示常量集中管理` | `npm test`、`npm run build` |
+| `SettingsDrawer.vue` 静态行内样式 | `402734b` `style(#11): SettingsDrawer 静态行内样式改为类名` | `npm test`、`npm run build`；剩余 `:style` 均为动态颜色绑定 |
+| `SettingsDrawer.vue` 职责过多 | `5247778`、`4dc4fcf`、`5deb28d`、`e35df41` | 拆出 `LineupModal.vue`、`GeneralSettings.vue`、`ProviderSettings.vue`、`AgentSettings.vue`；`npm test`、`npm run build` |
+| `App.vue` 职责过多 | `02463f3`、`1398088`、`78ad9e1`、`bce2b9c`、`2d98904` | 拆出 `RenameSessionModal.vue`、`SessionSidebar.vue`、`ChatMessages.vue`、`ComposerBar.vue`、`useTheme.js`；`npm test`、`npm run build` |
+| 原生 `confirm` / `alert` 混在业务组件中 | `75515d2` `refactor(#15): 统一前端确认弹窗` | `rg '\b(confirm\|alert)\(' web/src` 无匹配；`npm test`、`npm run build` |
+
+当前仍可继续改进的方向：`App.vue` 仍保留 SSE 事件归并、会话载入和导出 Markdown；`SettingsDrawer.vue` 仍保留 API 状态协调。它们已经不再承载大块模板和样式，但如果后续要补前端单元测试，可以继续抽 `useDiscussionSession()`、`useMarkdownExport()`、`useSettingsState()` 等 composable。
+
+## 原始待修复问题
 
 ### P0. 会话文件损坏被静默吞掉
 
