@@ -3,12 +3,12 @@ import { ref, onMounted, nextTick, computed } from 'vue'
 import { api, startDiscuss } from './api.js'
 import { renderMarkdown } from './markdown.js'
 import SettingsDrawer from './components/SettingsDrawer.vue'
+import RenameSessionModal from './components/RenameSessionModal.vue'
 import {
   AUTO_SCROLL_THRESHOLD_PX,
   DEFAULT_ORCHESTRATION,
   DEFAULT_ROUNDS,
   EXPORT_FILENAME_TOPIC_LENGTH,
-  SESSION_TITLE_MAX_LENGTH,
   SUMMARY_AGENT_ID,
   TOAST_DURATION_MS,
 } from './constants.js'
@@ -184,24 +184,15 @@ async function delSession(id, e) {
 }
 // 重命名弹框：居中输入框替代原生 prompt
 const renaming = ref(null) // { id, title } 正在重命名的会话；null=关闭
-const renameInput = ref('')
-const renameInputEl = ref(null)
 function renameSessionPrompt(s, e) {
   e.stopPropagation()
   renaming.value = { id: s.id, title: s.title }
-  renameInput.value = s.title
-  nextTick(() => renameInputEl.value?.focus())
 }
-async function confirmRename() {
+async function confirmRename(title) {
   if (!renaming.value) return
-  const t = renameInput.value.trim()
-  if (!t) { renameInputEl.value?.focus(); return }
-  await api.renameSession(renaming.value.id, t)
+  await api.renameSession(renaming.value.id, title)
   renaming.value = null
   await loadSessions()
-}
-function cancelRename() {
-  renaming.value = null
 }
 
 // ---------- 导出 Markdown ----------
@@ -334,25 +325,12 @@ async function onSettingsClose() {
 
     <SettingsDrawer v-if="showSettings" :config="config" @close="onSettingsClose" @changed="loadConfig" />
 
-    <!-- 重命名会话弹框 -->
-    <div v-if="renaming" class="modal-overlay" @click.self="cancelRename">
-      <div class="rename-modal">
-        <h3>重命名会话</h3>
-        <input
-          ref="renameInputEl"
-          v-model="renameInput"
-          class="rename-input"
-          :maxlength="SESSION_TITLE_MAX_LENGTH"
-          placeholder="输入新的会话名称"
-          @keydown.enter="confirmRename"
-          @keydown.esc="cancelRename"
-        />
-        <div class="rename-actions">
-          <button class="ghost" @click="cancelRename">取消</button>
-          <button class="primary" @click="confirmRename">确定</button>
-        </div>
-      </div>
-    </div>
+    <RenameSessionModal
+      v-if="renaming"
+      :session="renaming"
+      @close="renaming = null"
+      @submit="confirmRename"
+    />
   </div>
 </template>
 
@@ -368,15 +346,6 @@ async function onSettingsClose() {
 }
 .toast-enter-active, .toast-leave-active { transition: opacity 0.25s, transform 0.25s; }
 .toast-enter-from, .toast-leave-to { opacity: 0; transform: translate(-50%, -50%) scale(0.85); }
-
-/* 重命名弹框 */
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 300; }
-.rename-modal { background: var(--panel); border-radius: 14px; padding: 22px 24px; width: 360px; max-width: 90vw; box-shadow: 0 16px 48px rgba(0,0,0,0.25); }
-.rename-modal h3 { font-size: 16px; font-weight: 600; margin-bottom: 14px; }
-.rename-input { width: 100%; box-sizing: border-box; padding: 10px 12px; font-size: 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); }
-.rename-input:focus { border-color: var(--primary); outline: none; }
-.rename-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
-.rename-actions button { padding: 8px 20px; }
 
 /* 侧栏 */
 .sidebar { width: 240px; flex-shrink: 0; background: var(--panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; transition: margin-left 0.2s; }
