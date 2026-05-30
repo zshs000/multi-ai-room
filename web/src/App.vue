@@ -9,6 +9,7 @@ import ChatMessages from './components/ChatMessages.vue'
 import ComposerBar from './components/ComposerBar.vue'
 import { useDialog } from './composables/useDialog.js'
 import { useTheme } from './composables/useTheme.js'
+import { createTypewriter } from './typewriter.js'
 import {
   AUTO_SCROLL_THRESHOLD_PX,
   DEFAULT_ORCHESTRATION,
@@ -39,6 +40,7 @@ function showToast(text) {
 }
 let controller = null
 let lastTopic = ''
+let activeDiscussion = null
 
 async function loadConfig() {
   config.value = await api.getConfig()
@@ -81,18 +83,44 @@ function handleEvent(evt, ctx) {
     messages.value.push({ kind: 'user', text: evt.content })
     scrollToBottom()
   } else if (evt.type === 'agent_start') {
+    ctx.writer?.flush()
     ctx.current = { kind: 'agent', agentId: evt.agentId, name: evt.name, color: evt.color, model: evt.model, providerName: evt.providerName, round: evt.round, text: '', isSummary: evt.agentId === SUMMARY_AGENT_ID }
+    ctx.agentEnded = false
+    ctx.writer = createTypewriter({
+      append: (text) => { ctx.current.text += text; scrollToBottom() },
+      onIdle: () => {
+        if (ctx.agentEnded) ctx.writer = null
+        if (ctx.donePending) finishDiscussion(ctx)
+      },
+    })
     messages.value.push(ctx.current)
+    // 重新指向数组里的响应式代理：之后逐字 append 才会被 Vue 追踪并重渲染（直接改 push 前的原始对象不触发）
+    ctx.current = messages.value[messages.value.length - 1]
     scrollToBottom()
   } else if (evt.type === 'token') {
-    if (ctx.current) { ctx.current.text += evt.text; scrollToBottom() }
+    ctx.writer?.enqueue(evt.text)
+  } else if (evt.type === 'agent_end') {
+    ctx.agentEnded = true
   } else if (evt.type === 'error') {
+    ctx.writer?.flush()
+    ctx.writer = null
     messages.value.push({ kind: 'error', text: evt.message })
     scrollToBottom()
   } else if (evt.type === 'done') {
-    running.value = false
-    loadSessions() // 刷新会话列表（新会话/消息数）
+    if (ctx.writer) {
+      ctx.donePending = true
+    } else {
+      finishDiscussion(ctx)
+    }
   }
+}
+
+function finishDiscussion(ctx) {
+  ctx.writer = null
+  ctx.donePending = false
+  if (activeDiscussion === ctx) activeDiscussion = null
+  running.value = false
+  loadSessions() // 刷新会话列表（新会话/消息数）
 }
 
 function runTopic(t) {
@@ -102,7 +130,8 @@ function runTopic(t) {
   currentSessionId.value = null // 新讨论
   messages.value = []
   addSystem(`话题：${t}`)
-  const ctx = { current: null }
+  const ctx = { current: null, writer: null, agentEnded: false, donePending: false }
+  activeDiscussion = ctx
   controller = startDiscuss({ topic: t }, (evt) => handleEvent(evt, ctx))
 }
 
@@ -125,7 +154,8 @@ function interject() {
   topic.value = ''
   running.value = true
   autoScroll.value = true
-  const ctx = { current: null }
+  const ctx = { current: null, writer: null, agentEnded: false, donePending: false }
+  activeDiscussion = ctx
   const opts = { sessionId: currentSessionId.value, interject: t }
   if (mentionTarget.value) opts.mention = mentionTarget.value
   controller = startDiscuss(opts, (evt) => handleEvent(evt, ctx))
@@ -139,6 +169,8 @@ function retry() {
 
 function stop() {
   if (controller) controller.abort()
+  activeDiscussion?.writer?.stop()
+  activeDiscussion = null
   running.value = false
   const last = messages.value[messages.value.length - 1]
   if (last && last.kind === 'agent') last.interrupted = true

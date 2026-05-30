@@ -7,6 +7,6 @@
     "start": "node server.js",
     "build": "cd web && npm ci && npm run build",
     "dev:web": "cd web && npm run dev",
-    "test": "node test/adapters.test.js && node test/store.test.js && node test/store-io.test.js && node test/orchestrator.test.js && node test/sessions.test.js"
+    "test": "node test/adapters.test.js && node test/store.test.js && node test/store-io.test.js && node test/orchestrator.test.js && node test/sessions.test.js && node test/typewriter.test.js"
   }
 }
