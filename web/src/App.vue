@@ -4,6 +4,8 @@ import { api, startDiscuss } from './api.js'
 import { renderMarkdown } from './markdown.js'
 import SettingsDrawer from './components/SettingsDrawer.vue'
 import RenameSessionModal from './components/RenameSessionModal.vue'
+import DialogModal from './components/DialogModal.vue'
+import { useDialog } from './composables/useDialog.js'
 import {
   AUTO_SCROLL_THRESHOLD_PX,
   DEFAULT_ORCHESTRATION,
@@ -25,6 +27,7 @@ const sessions = ref([])
 const currentSessionId = ref(null)
 const showSidebar = ref(true)
 const toast = ref('') // 居中偏上的轻提示文字，空=不显示
+const { dialog, confirmDialog, resolveDialog } = useDialog()
 let toastTimer = null
 function showToast(text) {
   toast.value = text
@@ -177,7 +180,13 @@ function newChat() {
 }
 async function delSession(id, e) {
   e.stopPropagation()
-  if (!confirm('删除这个会话？')) return
+  const confirmed = await confirmDialog({
+    title: '删除会话',
+    message: '删除这个会话？',
+    confirmText: '删除',
+    danger: true,
+  })
+  if (!confirmed) return
   await api.deleteSession(id)
   if (currentSessionId.value === id) newChat()
   await loadSessions()
@@ -324,6 +333,7 @@ async function onSettingsClose() {
     </div>
 
     <SettingsDrawer v-if="showSettings" :config="config" @close="onSettingsClose" @changed="loadConfig" />
+    <DialogModal :dialog="dialog" @resolve="resolveDialog" />
 
     <RenameSessionModal
       v-if="renaming"

@@ -1,7 +1,9 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
 import { api } from '../api.js'
+import DialogModal from './DialogModal.vue'
 import LineupModal from './LineupModal.vue'
+import { useDialog } from '../composables/useDialog.js'
 import {
   AGENT_COLOR_PRESETS,
   DEFAULT_MAX_TURNS,
@@ -23,6 +25,7 @@ const moderatorModel = ref('')
 const maxTurns = ref(DEFAULT_MAX_TURNS)
 const summarize = ref(false)
 const savedTip = ref('') // '' | 'saving' | 'saved' | 'error'
+const { dialog, confirmDialog, alertDialog, resolveDialog } = useDialog()
 let savedTimer = null
 const provTemplates = ref([])
 const lineups = ref([])
@@ -78,7 +81,13 @@ async function saveProvider() {
 async function delProvider(p) {
   const r = await api.deleteProvider(p.id)
   if (r.ok === false && r.referencedBy) {
-    if (confirm(`有 ${r.referencedBy.length} 个 Agent 引用「${p.name}」。强制删除？这些 Agent 将失效。`)) {
+    const confirmed = await confirmDialog({
+      title: '强制删除供应商',
+      message: `有 ${r.referencedBy.length} 个 Agent 引用「${p.name}」。强制删除后这些 Agent 将失效。`,
+      confirmText: '强制删除',
+      danger: true,
+    })
+    if (confirmed) {
       await api.deleteProvider(p.id, true)
       await reload()
     }
@@ -124,7 +133,13 @@ async function saveAgent() {
   await reload()
 }
 async function delAgent(a) {
-  if (confirm(`删除 Agent「${a.name}」？`)) {
+  const confirmed = await confirmDialog({
+    title: '删除 Agent',
+    message: `删除 Agent「${a.name}」？`,
+    confirmText: '删除',
+    danger: true,
+  })
+  if (confirmed) {
     await api.deleteAgent(a.id)
     await reload()
   }
@@ -169,10 +184,18 @@ const showLineups = ref(false)
 async function loadLineup(lineup) {
   const firstProv = providers.value[0]
   if (!firstProv) {
-    alert('请先添加至少一个供应商，再载入阵容。')
+    await alertDialog({
+      title: '需要供应商',
+      message: '请先添加至少一个供应商，再载入阵容。',
+    })
     return
   }
-  if (!confirm(`载入阵容「${lineup.name}」？将新增 ${lineup.agents.length} 个角色，统一使用供应商「${firstProv.name}」（可逐个改）。`)) return
+  const confirmed = await confirmDialog({
+    title: '载入阵容模板',
+    message: `载入阵容「${lineup.name}」？将新增 ${lineup.agents.length} 个角色，统一使用供应商「${firstProv.name}」（可逐个改）。`,
+    confirmText: '载入',
+  })
+  if (!confirmed) return
   for (const a of lineup.agents) {
     await api.createAgent({
       name: a.name, color: a.color, systemPrompt: a.systemPrompt,
@@ -407,6 +430,7 @@ function providerName(id) {
       @close="showLineups = false"
       @load="loadLineup"
     />
+    <DialogModal :dialog="dialog" @resolve="resolveDialog" />
   </div>
 </template>
 
