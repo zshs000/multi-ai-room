@@ -5,6 +5,7 @@ import { renderMarkdown } from './markdown.js'
 import SettingsDrawer from './components/SettingsDrawer.vue'
 import RenameSessionModal from './components/RenameSessionModal.vue'
 import DialogModal from './components/DialogModal.vue'
+import SessionSidebar from './components/SessionSidebar.vue'
 import { useDialog } from './composables/useDialog.js'
 import {
   AUTO_SCROLL_THRESHOLD_PX,
@@ -178,8 +179,7 @@ function newChat() {
   messages.value = []
   lastTopic = ''
 }
-async function delSession(id, e) {
-  e.stopPropagation()
+async function delSession(id) {
   const confirmed = await confirmDialog({
     title: '删除会话',
     message: '删除这个会话？',
@@ -193,8 +193,7 @@ async function delSession(id, e) {
 }
 // 重命名弹框：居中输入框替代原生 prompt
 const renaming = ref(null) // { id, title } 正在重命名的会话；null=关闭
-function renameSessionPrompt(s, e) {
-  e.stopPropagation()
+function renameSessionPrompt(s) {
   renaming.value = { id: s.id, title: s.title }
 }
 async function confirmRename(title) {
@@ -245,27 +244,15 @@ async function onSettingsClose() {
     <transition name="toast">
       <div v-if="toast" class="app-toast">{{ toast }}</div>
     </transition>
-    <!-- 会话侧栏 -->
-    <aside class="sidebar">
-      <div class="sidebar-head">
-        <button class="primary block" @click="newChat" :disabled="running">＋ 新讨论</button>
-      </div>
-      <div class="session-list">
-        <div
-          v-for="s in sessions" :key="s.id"
-          class="session-item" :class="{ active: s.id === currentSessionId }"
-          @click="loadSession(s.id)"
-        >
-          <div class="session-title">{{ s.title }}</div>
-          <div class="session-meta">{{ s.messageCount }} 条 · {{ s.agentNames.join('/') }}</div>
-          <div class="session-btns">
-            <button class="session-btn" @click="renameSessionPrompt(s, $event)" title="重命名">✎</button>
-            <button class="session-btn" @click="delSession(s.id, $event)" title="删除">✕</button>
-          </div>
-        </div>
-        <div v-if="!sessions.length" class="session-empty">还没有历史会话</div>
-      </div>
-    </aside>
+    <SessionSidebar
+      :sessions="sessions"
+      :current-session-id="currentSessionId"
+      :running="running"
+      @new-chat="newChat"
+      @load-session="loadSession"
+      @rename-session="renameSessionPrompt"
+      @delete-session="delSession"
+    />
 
     <!-- 主区 -->
     <div class="main-area">
@@ -357,22 +344,6 @@ async function onSettingsClose() {
 .toast-enter-active, .toast-leave-active { transition: opacity 0.25s, transform 0.25s; }
 .toast-enter-from, .toast-leave-to { opacity: 0; transform: translate(-50%, -50%) scale(0.85); }
 
-/* 侧栏 */
-.sidebar { width: 240px; flex-shrink: 0; background: var(--panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; transition: margin-left 0.2s; }
-.sidebar-hidden .sidebar { margin-left: -240px; }
-.sidebar-head { padding: 12px; border-bottom: 1px solid var(--border); }
-.session-list { flex: 1; overflow-y: auto; padding: 8px; }
-.session-item { position: relative; padding: 10px 12px; border-radius: 8px; cursor: pointer; margin-bottom: 4px; }
-.session-item:hover { background: var(--btn-bg); }
-.session-item.active { background: var(--code-bg); }
-.session-title { font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 40px; }
-.session-meta { font-size: 11px; color: var(--muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.session-btns { position: absolute; top: 8px; right: 6px; display: flex; gap: 2px; opacity: 0; }
-.session-btn { padding: 2px 6px; font-size: 11px; background: transparent; }
-.session-item:hover .session-btns { opacity: 0.7; }
-.session-btn:hover { opacity: 1; background: var(--btn-hover); }
-.session-empty { color: var(--muted); font-size: 13px; text-align: center; padding: 20px; }
-
 /* 主区 */
 .main-area { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 header {
@@ -444,7 +415,6 @@ footer button { padding: 0 24px; }
 
 /* 响应式 */
 @media (max-width: 600px) {
-  .sidebar { position: absolute; z-index: 50; height: 100%; box-shadow: 2px 0 12px rgba(0,0,0,0.15); }
   header { padding: 10px 14px; }
   header h1 { font-size: 16px; }
   main { padding: 14px; }
