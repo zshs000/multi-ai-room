@@ -6,6 +6,7 @@ import RenameSessionModal from './components/RenameSessionModal.vue'
 import DialogModal from './components/DialogModal.vue'
 import SessionSidebar from './components/SessionSidebar.vue'
 import ChatMessages from './components/ChatMessages.vue'
+import ComposerBar from './components/ComposerBar.vue'
 import { useDialog } from './composables/useDialog.js'
 import {
   AUTO_SCROLL_THRESHOLD_PX,
@@ -277,22 +278,16 @@ async function onSettingsClose() {
         />
       </main>
 
-      <footer>
-        <!-- @目标选择（仅续聊时显示）-->
-        <select v-if="canInterject" v-model="mentionTarget" class="mention-select" title="指定回应者">
-          <option value="">全体</option>
-          <option v-for="a in config.agents" :key="a.id" :value="a.id">@{{ a.name }}</option>
-        </select>
-        <input
-          v-model="topic"
-          :placeholder="canInterject ? '追问或补充，按回车继续讨论…' : '输入讨论话题，回车开始…'"
-          @keydown.enter="canInterject ? interject() : start()"
-          :disabled="running"
-        />
-        <button v-if="running" class="danger" @click="stop">停止</button>
-        <button v-else-if="canInterject" class="primary" @click="interject">追问</button>
-        <button v-else class="primary" @click="start">开始讨论</button>
-      </footer>
+      <ComposerBar
+        v-model="topic"
+        v-model:mention-target="mentionTarget"
+        :agents="config.agents"
+        :running="running"
+        :can-interject="canInterject"
+        @start="start"
+        @interject="interject"
+        @stop="stop"
+      />
     </div>
 
     <SettingsDrawer v-if="showSettings" :config="config" @close="onSettingsClose" @changed="loadConfig" />
@@ -334,17 +329,10 @@ header h1 { font-size: 18px; font-weight: 600; }
 
 main { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 16px; }
 
-footer { background: var(--panel); border-top: 1px solid var(--border); padding: 14px 20px; display: flex; gap: 10px; }
-footer input { flex: 1; }
-footer button { padding: 0 24px; }
-.mention-select { width: auto; flex-shrink: 0; max-width: 130px; }
-
 /* 响应式 */
 @media (max-width: 600px) {
   header { padding: 10px 14px; }
   header h1 { font-size: 16px; }
   main { padding: 14px; }
-  footer { padding: 10px 14px; }
-  footer button { padding: 0 16px; }
 }
 </style>
