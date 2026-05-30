@@ -8,6 +8,7 @@ import SessionSidebar from './components/SessionSidebar.vue'
 import ChatMessages from './components/ChatMessages.vue'
 import ComposerBar from './components/ComposerBar.vue'
 import { useDialog } from './composables/useDialog.js'
+import { useTheme } from './composables/useTheme.js'
 import {
   AUTO_SCROLL_THRESHOLD_PX,
   DEFAULT_ORCHESTRATION,
@@ -23,7 +24,7 @@ const running = ref(false)
 const showSettings = ref(false)
 const config = ref({ providers: [], agents: [], rounds: DEFAULT_ROUNDS, orchestration: DEFAULT_ORCHESTRATION })
 const chatEl = ref(null)
-const theme = ref(localStorage.getItem('theme') || 'light')
+const { theme, applyTheme, toggleTheme } = useTheme()
 const autoScroll = ref(true)
 const sessions = ref([])
 const currentSessionId = ref(null)
@@ -50,16 +51,6 @@ onMounted(() => {
   loadSessions()
   applyTheme()
 })
-
-// ---------- 主题 ----------
-function applyTheme() {
-  document.documentElement.setAttribute('data-theme', theme.value)
-}
-function toggleTheme() {
-  theme.value = theme.value === 'light' ? 'dark' : 'light'
-  localStorage.setItem('theme', theme.value)
-  applyTheme()
-}
 
 // ---------- 智能滚动 ----------
 function onScroll() {
