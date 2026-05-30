@@ -4,6 +4,7 @@ import { api } from '../api.js'
 import DialogModal from './DialogModal.vue'
 import GeneralSettings from './GeneralSettings.vue'
 import LineupModal from './LineupModal.vue'
+import ProviderSettings from './ProviderSettings.vue'
 import { useDialog } from '../composables/useDialog.js'
 import {
   AGENT_COLOR_PRESETS,
@@ -332,54 +333,20 @@ function providerName(id) {
           </div>
         </div>
 
-        <!-- ===== Provider 管理 ===== -->
-        <div v-if="tab === 'providers'">
-          <div v-if="!editingProvider">
-            <div v-for="p in providers" :key="p.id" class="card">
-              <div class="card-main">
-                <div class="card-title">{{ p.name }} <span class="badge">{{ p.protocol }}</span></div>
-                <div class="card-sub">{{ p.baseUrl }}</div>
-                <div class="card-sub">密钥：{{ p.hasApiKey ? p.apiKeyMask : '未设置' }} · 模型：{{ (p.models || []).join(', ') || '无' }}</div>
-                <div v-if="testResult[p.id]" class="test-result" :class="{ ok: testResult[p.id].ok, bad: testResult[p.id].ok === false }">
-                  <span v-if="testResult[p.id].loading">测试中…</span>
-                  <span v-else>{{ testResult[p.id].ok ? '✓' : '✗' }} {{ testResult[p.id].message }} <span v-if="testResult[p.id].latencyMs">({{ testResult[p.id].latencyMs }}ms)</span></span>
-                </div>
-              </div>
-              <div class="card-actions">
-                <button @click="testProvider(p)">测试</button>
-                <button @click="editProvider(p)">编辑</button>
-                <button class="danger" @click="delProvider(p)">删除</button>
-              </div>
-            </div>
-            <button class="primary block" @click="newProvider">+ 新增供应商</button>
-          </div>
-
-          <!-- Provider 编辑表单 -->
-          <div v-else class="form">
-            <label>从模板快速填充</label>
-            <div class="templates">
-              <button v-for="t in provTemplates" :key="t.name" class="tpl" @click="applyTemplate(t)">{{ t.name }}</button>
-            </div>
-            <label>名称</label>
-            <input v-model="editingProvider.name" placeholder="如：DeepSeek" />
-            <label>协议</label>
-            <select v-model="editingProvider.protocol">
-              <option value="openai">OpenAI 兼容</option>
-              <option value="anthropic">Anthropic (Claude)</option>
-            </select>
-            <label>API 地址 (Base URL)</label>
-            <input v-model="editingProvider.baseUrl" placeholder="https://api.deepseek.com" />
-            <div class="hint">填到域名根即可，无需加 /v1 或 /chat/completions</div>
-            <label>API Key</label>
-            <input v-model="editingProvider.apiKey" type="password" :placeholder="editingProvider.id ? '留空则不修改原密钥' : 'sk-...'" />
-            <label>可用模型（逗号分隔）</label>
-            <input v-model="editingProvider.modelsText" placeholder="deepseek-chat, deepseek-reasoner" />
-            <div class="form-actions">
-              <button @click="editingProvider = null">取消</button>
-              <button class="primary" @click="saveProvider" :disabled="!editingProvider.name">保存</button>
-            </div>
-          </div>
-        </div>
+        <ProviderSettings
+          v-if="tab === 'providers'"
+          :providers="providers"
+          :editing-provider="editingProvider"
+          :prov-templates="provTemplates"
+          :test-result="testResult"
+          @new-provider="newProvider"
+          @edit-provider="editProvider"
+          @delete-provider="delProvider"
+          @test-provider="testProvider"
+          @apply-template="applyTemplate"
+          @save-provider="saveProvider"
+          @cancel-edit="editingProvider = null"
+        />
 
         <GeneralSettings
           v-if="tab === 'settings'"
