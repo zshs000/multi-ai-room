@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
 import { api } from '../api.js'
+import AgentSettings from './AgentSettings.vue'
 import DialogModal from './DialogModal.vue'
 import GeneralSettings from './GeneralSettings.vue'
 import LineupModal from './LineupModal.vue'
@@ -228,9 +229,6 @@ async function saveSettings() {
   savedTimer = setTimeout(() => { savedTip.value = '' }, TOAST_DURATION_MS)
 }
 
-function providerName(id) {
-  return providers.value.find((p) => p.id === id)?.name || '（已失效）'
-}
 </script>
 
 <template>
@@ -253,85 +251,27 @@ function providerName(id) {
       </div>
 
       <div class="drawer-body">
-        <!-- ===== Agent 管理 ===== -->
-        <div v-if="tab === 'agents'">
-          <div v-if="!editingAgent">
-            <div class="toolbar">
-              <button @click="showLineups = true">⚡ 载入阵容模板</button>
-            </div>
-            <p class="hint hint-spaced">提示：修改角色只影响新讨论；已有会话保留创建时的角色快照。</p>
-            <div v-for="(a, idx) in agents" :key="a.id" class="card" :style="{ borderLeftColor: a.color }">
-              <div class="order-btns">
-                <button class="mini" :disabled="idx === 0" @click="moveAgent(idx, -1)">▲</button>
-                <button class="mini" :disabled="idx === agents.length - 1" @click="moveAgent(idx, 1)">▼</button>
-              </div>
-              <div class="card-main">
-                <div class="card-title">
-                  {{ a.name }}
-                  <span v-if="a.invalid" class="badge-warn">配置失效</span>
-                </div>
-                <div class="card-sub">{{ providerName(a.providerId) }} · {{ a.model }}</div>
-                <div class="card-desc">{{ a.systemPrompt }}</div>
-              </div>
-              <div class="card-actions">
-                <button @click="editAgent(a)">编辑</button>
-                <button class="danger" @click="delAgent(a)">删除</button>
-              </div>
-            </div>
-            <button class="primary block" @click="newAgent" :disabled="!providers.length">
-              + 新增角色
-            </button>
-            <p v-if="!providers.length" class="hint">请先到「供应商」标签添加至少一个供应商。</p>
-          </div>
-
-          <!-- Agent 编辑表单 -->
-          <div v-else class="form">
-            <label>名字</label>
-            <input v-model="editingAgent.name" placeholder="如：产品经理" />
-            <label>颜色</label>
-            <div class="colors">
-              <span v-for="c in AGENT_COLOR_PRESETS" :key="c" class="color-dot" :class="{ sel: editingAgent.color === c }" :style="{ background: c }" @click="editingAgent.color = c"></span>
-            </div>
-            <label>供应商</label>
-            <div class="row">
-              <select v-model="editingAgent.providerId" @change="onAgentProviderChange" class="row-fill">
-                <option v-for="p in providers" :key="p.id" :value="p.id">{{ p.name }} ({{ p.protocol }})</option>
-              </select>
-              <button @click="startInlineProvider" title="新建供应商">+</button>
-            </div>
-
-            <!-- 内联新建供应商 -->
-            <div v-if="inlineProvider" class="inline-box">
-              <div class="inline-title">新建供应商</div>
-              <div class="templates">
-                <button v-for="t in provTemplates" :key="t.name" class="tpl" @click="applyInlineTemplate(t)">{{ t.name }}</button>
-              </div>
-              <input v-model="inlineProvider.name" placeholder="名称" class="stack-input" />
-              <select v-model="inlineProvider.protocol" class="stack-input">
-                <option value="openai">OpenAI 兼容</option>
-                <option value="anthropic">Anthropic (Claude)</option>
-              </select>
-              <input v-model="inlineProvider.baseUrl" placeholder="https://api.deepseek.com" class="stack-input" />
-              <input v-model="inlineProvider.apiKey" type="password" placeholder="API Key" class="stack-input" />
-              <input v-model="inlineProvider.modelsText" placeholder="模型，逗号分隔" class="stack-input" />
-              <div class="form-actions">
-                <button @click="inlineProvider = null">取消</button>
-                <button class="primary" @click="saveInlineProvider" :disabled="!inlineProvider.name">创建并选用</button>
-              </div>
-            </div>
-
-            <label>模型</label>
-            <select v-model="editingAgent.model">
-              <option v-for="m in editingAgentModels" :key="m" :value="m">{{ m }}</option>
-            </select>
-            <label>人设 (System Prompt)</label>
-            <textarea v-model="editingAgent.systemPrompt" placeholder="描述这个角色的身份、视角、说话风格…"></textarea>
-            <div class="form-actions">
-              <button @click="editingAgent = null">取消</button>
-              <button class="primary" @click="saveAgent" :disabled="!editingAgent.name">保存</button>
-            </div>
-          </div>
-        </div>
+        <AgentSettings
+          v-if="tab === 'agents'"
+          :agents="agents"
+          :providers="providers"
+          :editing-agent="editingAgent"
+          :editing-agent-models="editingAgentModels"
+          :inline-provider="inlineProvider"
+          :prov-templates="provTemplates"
+          @show-lineups="showLineups = true"
+          @move-agent="moveAgent"
+          @new-agent="newAgent"
+          @edit-agent="editAgent"
+          @delete-agent="delAgent"
+          @agent-provider-change="onAgentProviderChange"
+          @start-inline-provider="startInlineProvider"
+          @apply-inline-template="applyInlineTemplate"
+          @save-inline-provider="saveInlineProvider"
+          @cancel-inline-provider="inlineProvider = null"
+          @save-agent="saveAgent"
+          @cancel-agent="editingAgent = null"
+        />
 
         <ProviderSettings
           v-if="tab === 'providers'"
@@ -383,22 +323,6 @@ function providerName(id) {
 .tabs button.active { background: var(--primary); color: #fff; }
 .drawer-body { flex: 1; overflow-y: auto; padding: 16px; }
 
-.card { background: var(--panel); border-radius: var(--radius); padding: 14px; margin-bottom: 10px; display: flex; gap: 12px; border-left: 4px solid transparent; }
-.card-main { flex: 1; min-width: 0; }
-.card-title { font-weight: 600; font-size: 15px; display: flex; align-items: center; gap: 8px; }
-.card-sub { font-size: 12px; color: var(--muted); margin-top: 3px; word-break: break-all; }
-.card-desc { font-size: 13px; color: var(--muted); margin-top: 6px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.card-actions { display: flex; flex-direction: column; gap: 6px; }
-.card-actions button { padding: 5px 12px; font-size: 13px; white-space: nowrap; }
-.badge { font-size: 11px; background: var(--code-bg); color: var(--primary); padding: 2px 8px; border-radius: 999px; }
-.badge-warn { font-size: 11px; background: var(--danger-bg); color: var(--danger); padding: 2px 8px; border-radius: 999px; }
-
-.block { width: 100%; padding: 12px; margin-top: 6px; }
-.form-actions { display: flex; gap: 10px; justify-content: flex-end; align-items: center; margin-top: 20px; }
-.hint-spaced { margin-bottom: 10px; }
-.row-fill { flex: 1; }
-.stack-input { margin-top: 8px; }
-
 /* 居中偏上的保存提示 toast（与主界面 app-toast 统一）*/
 .save-toast {
   position: fixed; top: 10%; left: 50%; transform: translate(-50%, -50%);
@@ -410,19 +334,4 @@ function providerName(id) {
 .save-toast .toast-icon { font-size: 14px; }
 .toast-enter-active, .toast-leave-active { transition: opacity 0.25s, transform 0.25s; }
 .toast-enter-from, .toast-leave-to { opacity: 0; transform: translate(-50%, -50%) scale(0.85); }
-.colors { display: flex; gap: 10px; }
-.color-dot { width: 26px; height: 26px; border-radius: 50%; cursor: pointer; border: 3px solid transparent; }
-.color-dot.sel { border-color: #00000030; transform: scale(1.1); }
-.templates { display: flex; flex-wrap: wrap; gap: 8px; }
-.tpl { font-size: 13px; }
-.test-result { font-size: 12px; margin-top: 8px; padding: 6px 10px; border-radius: 6px; background: var(--code-bg); }
-.test-result.ok { background: #e8f9ee; color: #1a8c3a; }
-.test-result.bad { background: var(--danger-bg); color: var(--danger); }
-
-.toolbar { margin-bottom: 12px; }
-.order-btns { display: flex; flex-direction: column; gap: 4px; justify-content: center; }
-.mini { padding: 2px 7px; font-size: 11px; line-height: 1; }
-.inline-box { background: var(--code-bg); border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin: 8px 0; }
-.inline-title { font-size: 13px; font-weight: 600; margin-bottom: 8px; color: var(--primary); }
-
 </style>
